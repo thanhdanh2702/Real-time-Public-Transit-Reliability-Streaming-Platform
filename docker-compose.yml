@@ -1,0 +1,263 @@
+name: ${COMPOSE_PROJECT_NAME:-transitpulse}
+
+x-airflow-common: &airflow-common
+  image: ${AIRFLOW_IMAGE:-apache/airflow:3.1.4-python3.12}
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-transitpulse_admin}:${POSTGRES_PASSWORD:-change-me-local-postgres}@postgres:5432/airflow
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+    AIRFLOW__WEBSERVER__SECRET_KEY: local-development-only-change-me
+    PYTHONPATH: /opt/airflow
+  user: "${AIRFLOW_UID:-50000}:0"
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/include:/opt/airflow/include
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./airflow/logs:/opt/airflow/logs
+    - ./dbt:/opt/airflow/dbt
+    - ./configs:/opt/airflow/configs:ro
+  networks:
+    - transitpulse
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17.10-alpine}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-transitpulse}
+      POSTGRES_USER: ${POSTGRES_USER:-transitpulse_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-postgres}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/init/00-create-airflow-db.sh:/docker-entrypoint-initdb.d/00-create-airflow-db.sh:ro
+      - ./database/migrations/001_create_schemas.sql:/docker-entrypoint-initdb.d/10-create-schemas.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - transitpulse
+
+  kafka:
+    image: ${KAFKA_IMAGE:-apache/kafka:4.3.1}
+    hostname: kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:${KAFKA_EXTERNAL_PORT:-29092}
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_MS: ${KAFKA_RETENTION_MS:-604800000}
+      KAFKA_LOG_SEGMENT_BYTES: 268435456
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    ports:
+      - "${KAFKA_EXTERNAL_PORT:-29092}:29092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - transitpulse
+
+  kafka-init:
+    image: ${KAFKA_IMAGE:-apache/kafka:4.3.1}
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_PARTITIONS: ${KAFKA_TOPIC_PARTITIONS:-3}
+      KAFKA_TOPIC_REPLICATION_FACTOR: ${KAFKA_TOPIC_REPLICATION_FACTOR:-1}
+      KAFKA_RETENTION_MS: ${KAFKA_RETENTION_MS:-604800000}
+      KAFKA_DLQ_RETENTION_MS: ${KAFKA_DLQ_RETENTION_MS:-2592000000}
+    volumes:
+      - ./scripts/create-topics.sh:/opt/transitpulse/create-topics.sh:ro
+    entrypoint: ["/bin/bash", "/opt/transitpulse/create-topics.sh"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - transitpulse
+
+  spark-master:
+    image: ${SPARK_IMAGE:-apache/spark:4.2.0-scala2.13-java17-python3-ubuntu}
+    hostname: spark-master
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
+    environment:
+      SPARK_NO_DAEMONIZE: "true"
+      SPARK_MASTER_HOST: spark-master
+      SPARK_MASTER_PORT: 7077
+      SPARK_MASTER_WEBUI_PORT: 8080
+    ports:
+      - "7077:7077"
+      - "${SPARK_MASTER_UI_PORT:-8081}:8080"
+    volumes:
+      - ./spark:/opt/transitpulse/spark
+      - ./configs:/opt/transitpulse/configs:ro
+      - spark-checkpoints:/opt/spark/checkpoints
+    restart: unless-stopped
+    networks:
+      - transitpulse
+
+  spark-worker:
+    image: ${SPARK_IMAGE:-apache/spark:4.2.0-scala2.13-java17-python3-ubuntu}
+    hostname: spark-worker
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    environment:
+      SPARK_NO_DAEMONIZE: "true"
+      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-2}
+      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-2g}
+      SPARK_WORKER_WEBUI_PORT: 8081
+    ports:
+      - "${SPARK_WORKER_UI_PORT:-8082}:8081"
+    volumes:
+      - ./spark:/opt/transitpulse/spark
+      - ./configs:/opt/transitpulse/configs:ro
+      - spark-checkpoints:/opt/spark/checkpoints
+    depends_on:
+      - spark-master
+    restart: unless-stopped
+    networks:
+      - transitpulse
+
+  kafka-ui:
+    image: ${KAFKA_UI_IMAGE:-provectuslabs/kafka-ui:v0.7.2}
+    profiles: ["tools"]
+    environment:
+      KAFKA_CLUSTERS_0_NAME: transitpulse-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      DYNAMIC_CONFIG_ENABLED: "false"
+    ports:
+      - "8080:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - transitpulse
+
+  airflow-init:
+    <<: *airflow-common
+    profiles: ["orchestration"]
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - >-
+        airflow db migrate &&
+        (airflow users create
+        --username "$${AIRFLOW_ADMIN_USERNAME}"
+        --password "$${AIRFLOW_ADMIN_PASSWORD}"
+        --firstname Transit
+        --lastname Pulse
+        --role Admin
+        --email "$${AIRFLOW_ADMIN_EMAIL}" || true)
+    environment:
+      <<: *airflow-common-env
+      AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-change-me-local-airflow}
+      AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@example.invalid}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  airflow-api-server:
+    <<: *airflow-common
+    profiles: ["orchestration"]
+    command: api-server
+    ports:
+      - "8083:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    profiles: ["orchestration"]
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  producer:
+    build:
+      context: .
+      dockerfile: producer/Dockerfile
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
+    profiles: ["apps"]
+    environment:
+      MBTA_API_KEY: ${MBTA_API_KEY:-}
+      MBTA_VEHICLE_POSITIONS_URL: ${MBTA_VEHICLE_POSITIONS_URL:-https://cdn.mbta.com/realtime/VehiclePositions.pb}
+      MBTA_TRIP_UPDATES_URL: ${MBTA_TRIP_UPDATES_URL:-https://cdn.mbta.com/realtime/TripUpdates.pb}
+      MBTA_ALERTS_URL: ${MBTA_ALERTS_URL:-https://cdn.mbta.com/realtime/Alerts.pb}
+      MBTA_GTFS_STATIC_URL: ${MBTA_GTFS_STATIC_URL:-https://cdn.mbta.com/MBTA_GTFS.zip}
+      MBTA_POLL_INTERVAL_SECONDS: ${MBTA_POLL_INTERVAL_SECONDS:-30}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      POSTGRES_DB: ${POSTGRES_DB:-transitpulse}
+      POSTGRES_USER: ${POSTGRES_USER:-transitpulse_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-postgres}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ROUTES_CONFIG_PATH: /app/configs/routes.example.yaml
+      THRESHOLDS_CONFIG_PATH: /app/configs/thresholds.yaml
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./replay:/app/replay
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: on-failure
+    networks:
+      - transitpulse
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
+    profiles: ["apps"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-transitpulse}
+      POSTGRES_USER: ${POSTGRES_USER:-transitpulse_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-postgres}
+      POSTGRES_HOST: postgres
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/New_York}
+    ports:
+      - "${DASHBOARD_PORT:-8501}:8501"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - transitpulse
+
+networks:
+  transitpulse:
+    name: transitpulse
+
+volumes:
+  kafka-data:
+  postgres-data:
+  spark-checkpoints:

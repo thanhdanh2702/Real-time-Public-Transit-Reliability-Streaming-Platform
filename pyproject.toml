@@ -1,0 +1,88 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "transitpulse"
+version = "0.1.0"
+description = "Real-time public transit streaming platform built with Kafka and Spark Structured Streaming"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = { text = "To be selected" }
+authors = [{ name = "TransitPulse contributors" }]
+dependencies = []
+
+[project.optional-dependencies]
+producer = [
+  "confluent-kafka>=2.6,<3",
+  "gtfs-realtime-bindings>=1.0,<2",
+  "protobuf>=5,<7",
+  "pydantic>=2.9,<3",
+  "PyYAML>=6,<7",
+  "requests>=2.32,<3",
+  "structlog>=24,<26",
+  "tenacity>=9,<10",
+]
+spark = [
+  "psycopg[binary]>=3.2,<4",
+  "pyspark==4.2.0",
+  "PyYAML>=6,<7",
+]
+dashboard = [
+  "pandas>=2.2,<4",
+  "plotly>=6,<7",
+  "psycopg[binary]>=3.2,<4",
+  "pydeck>=0.9,<1",
+  "PyYAML>=6,<7",
+  "SQLAlchemy>=2,<3",
+  "streamlit>=1.40,<2",
+]
+dbt = [
+  "dbt-core>=1.10,<2",
+  "dbt-postgres>=1.9,<2",
+]
+dev = [
+  "mypy>=1.14,<2",
+  "pre-commit>=4,<5",
+  "PyYAML>=6,<7",
+  "pytest>=8,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.9,<1",
+  "types-PyYAML>=6,<7",
+  "types-requests>=2.32,<3",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["producer*", "spark*", "dashboard*", "airflow*"]
+namespaces = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra --strict-config --strict-markers --cov=producer --cov=spark --cov=dashboard --cov-report=term-missing"
+testpaths = ["producer/tests", "spark/tests", "dashboard/tests", "airflow/tests", "tests"]
+markers = [
+  "integration: requires local infrastructure",
+  "e2e: exercises the complete data flow",
+  "resilience: intentionally interrupts a dependency",
+  "performance: measures throughput or latency",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["dbt/target", "airflow/logs", "checkpoints"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+exclude = "(dbt/target|airflow/logs|checkpoints)"

@@ -1,0 +1,42 @@
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  json:
+    format: "%(asctime)s %(levelname)s %(name)s %(message)s"
+  console:
+    format: "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: console
+    stream: ext://sys.stdout
+
+root:
+  level: INFO
+  handlers:
+    - console
+
+loggers:
+  confluent_kafka:
+    level: WARNING
+    propagate: true
+  py4j:
+    level: WARNING
+    propagate: true
+  urllib3:
+    level: WARNING
+    propagate: true
+
+policy:
+  timestamp_timezone: UTC
+  redact_fields:
+    - api_key
+    - password
+    - authorization
+    - connection_string
+  payload_logging:
+    default: metadata_only
+    allow_full_payload_at_level: DEBUG

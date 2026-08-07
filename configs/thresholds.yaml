@@ -1,0 +1,42 @@
+version: 1
+
+freshness:
+  fresh_max_seconds: 60
+  delayed_max_seconds: 180
+  stale_min_seconds: 181
+
+streaming:
+  watermark_seconds: 180
+  windows_seconds:
+    realtime: 60
+    operational: 300
+    trend: 900
+  alert_cooldown_seconds: 600
+
+delay:
+  early_tolerance_seconds: 60
+  on_time_late_tolerance_seconds: 300
+  excessive_delay_seconds: 600
+
+bunching:
+  headway_threshold_seconds: 120
+  confirmation_observations: 2
+  cooldown_seconds: 600
+  ignore_stale_vehicles: true
+
+stalled_vehicle:
+  max_movement_meters: 50
+  observation_window_seconds: 600
+  require_active_trip: true
+
+data_quality:
+  max_future_timestamp_seconds: 60
+  max_event_age_seconds: 900
+  max_invalid_record_ratio: 0.01
+  max_dead_letter_ratio: 0.005
+  warn_missing_route_ratio: 0.02
+
+operations:
+  warn_consumer_lag_messages: 10000
+  critical_consumer_lag_messages: 100000
+  target_p95_end_to_end_latency_seconds: 60

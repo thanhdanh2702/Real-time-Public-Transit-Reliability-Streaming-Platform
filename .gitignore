@@ -1,0 +1,62 @@
+# Local secrets and environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Spark
+checkpoints/
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Airflow
+airflow/logs/*
+!airflow/logs/.gitkeep
+airflow/airflow.cfg
+airflow/airflow.db
+airflow/webserver_config.py
+
+# dbt
+dbt/target/
+dbt/logs/
+dbt/packages/
+dbt/profiles.yml
+
+# Data and replay artifacts
+data/
+replay/data/
+*.pb
+*.parquet
+*.zip
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local tooling
+.docker/
+tmp/
+*.log

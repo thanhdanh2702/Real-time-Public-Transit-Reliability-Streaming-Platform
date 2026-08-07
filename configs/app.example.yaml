@@ -1,0 +1,58 @@
+project:
+  name: transitpulse
+  environment: local
+  timezone: America/New_York
+
+source:
+  provider: mbta
+  attribution: "Massachusetts Department of Transportation / MBTA"
+  vehicle_positions_url: ${MBTA_VEHICLE_POSITIONS_URL}
+  trip_updates_url: ${MBTA_TRIP_UPDATES_URL}
+  service_alerts_url: ${MBTA_ALERTS_URL}
+  gtfs_static_url: ${MBTA_GTFS_STATIC_URL}
+  poll_interval_seconds: ${MBTA_POLL_INTERVAL_SECONDS}
+  connect_timeout_seconds: 5
+  read_timeout_seconds: 20
+  max_retries: 4
+  retry_backoff_seconds: 2
+  user_agent: transitpulse/0.1
+
+kafka:
+  bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS}
+  client_id: transitpulse-producer
+  topics:
+    vehicle_positions: transit.vehicle_positions.v1
+    trip_updates: transit.trip_updates.v1
+    service_alerts: transit.service_alerts.v1
+    operational_alerts: transit.operational_alerts.v1
+    dead_letter: transit.dead_letter.v1
+  producer:
+    acks: all
+    enable_idempotence: true
+    compression_type: zstd
+    linger_ms: 20
+    delivery_timeout_ms: 120000
+
+spark:
+  master: ${SPARK_MASTER_URL}
+  checkpoint_root: ${SPARK_CHECKPOINT_ROOT}
+  trigger_interval: 30 seconds
+  watermark: 3 minutes
+  fail_on_data_loss: true
+  max_offsets_per_trigger: 100000
+  timezone: UTC
+
+postgres:
+  host: postgres
+  port: 5432
+  database: ${POSTGRES_DB}
+  user: ${POSTGRES_USER}
+  password_env: POSTGRES_PASSWORD
+  connect_timeout_seconds: 10
+  application_name: transitpulse
+
+runtime:
+  route_config_path: ${ROUTES_CONFIG_PATH}
+  thresholds_config_path: ${THRESHOLDS_CONFIG_PATH}
+  log_level: ${LOG_LEVEL}
+  replay_mode: false

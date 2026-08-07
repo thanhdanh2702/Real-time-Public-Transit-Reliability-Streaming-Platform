@@ -1,0 +1,43 @@
+name: Container builds
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "producer/**"
+      - "spark/**"
+      - "dashboard/**"
+      - "pyproject.toml"
+      - ".github/workflows/docker-build.yml"
+  pull_request:
+    paths:
+      - "producer/**"
+      - "spark/**"
+      - "dashboard/**"
+      - "pyproject.toml"
+      - ".github/workflows/docker-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: producer
+            dockerfile: producer/Dockerfile
+          - name: spark
+            dockerfile: spark/Dockerfile
+          - name: dashboard
+            dockerfile: dashboard/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          tags: transitpulse/${{ matrix.name }}:ci

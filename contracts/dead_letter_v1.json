@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transitpulse.local/contracts/dead_letter_v1.json",
+  "title": "TransitPulse dead-letter event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "failed_at",
+    "failure_stage",
+    "error_type",
+    "error_message",
+    "original_topic"
+  ],
+  "properties": {
+    "event_id": { "type": "string", "minLength": 1 },
+    "event_type": { "const": "dead_letter" },
+    "schema_version": { "const": 1 },
+    "failed_at": { "type": "string", "format": "date-time" },
+    "failure_stage": { "type": "string", "enum": ["producer", "schema_validation", "spark_transform", "sink"] },
+    "error_type": { "type": "string", "minLength": 1 },
+    "error_message": { "type": "string", "minLength": 1 },
+    "original_topic": { "type": "string", "minLength": 1 },
+    "original_partition": { "type": ["integer", "null"] },
+    "original_offset": { "type": ["integer", "null"] },
+    "original_key": { "type": ["string", "null"] },
+    "original_schema_version": { "type": ["integer", "null"] },
+    "raw_payload": { "type": ["string", "object", "array", "null"] },
+    "correlation_id": { "type": ["string", "null"] }
+  }
+}

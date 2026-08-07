@@ -1,0 +1,46 @@
+name: transitpulse
+version: 1.0.0
+config-version: 2
+
+profile: transitpulse
+
+model-paths:
+  - models
+analysis-paths: []
+test-paths:
+  - tests
+seed-paths:
+  - seeds
+macro-paths:
+  - macros
+snapshot-paths:
+  - snapshots
+
+target-path: target
+clean-targets:
+  - target
+  - dbt_packages
+
+models:
+  transitpulse:
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+    marts:
+      +schema: mart
+      +materialized: table
+
+seeds:
+  transitpulse:
+    +schema: seed
+
+snapshots:
+  transitpulse:
+    +target_schema: snapshots
+
+vars:
+  incremental_lookback_hours: 2
+  project_timezone: America/New_York

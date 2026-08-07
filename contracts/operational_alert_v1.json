@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transitpulse.local/contracts/operational_alert_v1.json",
+  "title": "TransitPulse operational alert event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "source",
+    "source_timestamp",
+    "ingested_at",
+    "published_at",
+    "route_id",
+    "payload"
+  ],
+  "properties": {
+    "event_id": { "type": "string", "minLength": 1 },
+    "event_type": { "const": "operational_alert" },
+    "schema_version": { "const": 1 },
+    "source": { "const": "transitpulse_spark" },
+    "source_timestamp": { "type": "string", "format": "date-time" },
+    "feed_timestamp": { "type": ["string", "null"], "format": "date-time" },
+    "ingested_at": { "type": "string", "format": "date-time" },
+    "published_at": { "type": "string", "format": "date-time" },
+    "route_id": { "type": "string", "minLength": 1 },
+    "trip_id": { "type": ["string", "null"] },
+    "vehicle_id": { "type": ["string", "null"] },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alert_fingerprint",
+        "alert_type",
+        "severity",
+        "status",
+        "rule_version",
+        "first_detected_at",
+        "last_detected_at"
+      ],
+      "properties": {
+        "alert_fingerprint": { "type": "string", "minLength": 1 },
+        "alert_type": {
+          "type": "string",
+          "enum": ["bus_bunching", "stale_vehicle", "possible_stalled_vehicle", "excessive_delay"]
+        },
+        "severity": { "type": "string", "enum": ["info", "warning", "critical"] },
+        "status": { "type": "string", "enum": ["active", "resolved"] },
+        "direction_id": { "type": ["integer", "null"], "enum": [0, 1, null] },
+        "related_vehicle_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "rule_version": { "type": "string", "minLength": 1 },
+        "threshold": { "type": ["number", "null"] },
+        "observed_value": { "type": ["number", "null"] },
+        "first_detected_at": { "type": "string", "format": "date-time" },
+        "last_detected_at": { "type": "string", "format": "date-time" },
+        "evidence": { "type": "object" }
+      }
+    }
+  }
+}

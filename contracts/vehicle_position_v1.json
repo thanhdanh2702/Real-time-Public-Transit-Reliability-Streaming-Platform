@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transitpulse.local/contracts/vehicle_position_v1.json",
+  "title": "TransitPulse vehicle position event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "source",
+    "source_timestamp",
+    "feed_timestamp",
+    "ingested_at",
+    "published_at",
+    "vehicle_id",
+    "payload"
+  ],
+  "properties": {
+    "event_id": { "type": "string", "minLength": 1 },
+    "event_type": { "const": "vehicle_position" },
+    "schema_version": { "const": 1 },
+    "source": { "const": "mbta_gtfs_realtime" },
+    "source_timestamp": { "type": "string", "format": "date-time" },
+    "feed_timestamp": { "type": "string", "format": "date-time" },
+    "ingested_at": { "type": "string", "format": "date-time" },
+    "published_at": { "type": "string", "format": "date-time" },
+    "route_id": { "type": ["string", "null"] },
+    "trip_id": { "type": ["string", "null"] },
+    "vehicle_id": { "type": "string", "minLength": 1 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["latitude", "longitude"],
+      "properties": {
+        "latitude": { "type": "number", "minimum": -90, "maximum": 90 },
+        "longitude": { "type": "number", "minimum": -180, "maximum": 180 },
+        "bearing": { "type": ["number", "null"], "minimum": 0, "maximum": 360 },
+        "speed_mps": { "type": ["number", "null"], "minimum": 0 },
+        "direction_id": { "type": ["integer", "null"], "enum": [0, 1, null] },
+        "current_stop_sequence": { "type": ["integer", "null"], "minimum": 0 },
+        "stop_id": { "type": ["string", "null"] },
+        "current_status": { "type": ["string", "null"] },
+        "occupancy_status": { "type": ["string", "null"] },
+        "vehicle_label": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

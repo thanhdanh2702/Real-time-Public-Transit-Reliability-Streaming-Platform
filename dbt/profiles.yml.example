@@ -1,0 +1,15 @@
+transitpulse:
+  target: local
+  outputs:
+    local:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+      port: "{{ env_var('POSTGRES_HOST_PORT', '5432') | int }}"
+      user: "{{ env_var('POSTGRES_USER') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD') }}"
+      dbname: "{{ env_var('POSTGRES_DB', 'transitpulse') }}"
+      schema: mart
+      threads: 4
+      connect_timeout: 10
+      keepalives_idle: 0
+      search_path: "mart,core,staging,public"

@@ -1,0 +1,21 @@
+provider: mbta
+
+# MBTA route identifiers. Start with a small allowlist and confirm that the
+# selected routes are active during the intended demo window.
+allowlist:
+  - "1"
+  - "66"
+  - "77"
+
+exclude: []
+
+filters:
+  include_directions:
+    - 0
+    - 1
+  require_vehicle_id: true
+  require_trip_id: false
+
+metadata:
+  selection_reason: "High-frequency sample routes for local development"
+  reviewed_at: "2026-08-05"

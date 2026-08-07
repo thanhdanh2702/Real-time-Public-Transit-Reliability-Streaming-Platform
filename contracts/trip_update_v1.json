@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transitpulse.local/contracts/trip_update_v1.json",
+  "title": "TransitPulse trip update event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "source",
+    "source_timestamp",
+    "feed_timestamp",
+    "ingested_at",
+    "published_at",
+    "trip_id",
+    "payload"
+  ],
+  "properties": {
+    "event_id": { "type": "string", "minLength": 1 },
+    "event_type": { "const": "trip_update" },
+    "schema_version": { "const": 1 },
+    "source": { "const": "mbta_gtfs_realtime" },
+    "source_timestamp": { "type": "string", "format": "date-time" },
+    "feed_timestamp": { "type": "string", "format": "date-time" },
+    "ingested_at": { "type": "string", "format": "date-time" },
+    "published_at": { "type": "string", "format": "date-time" },
+    "route_id": { "type": ["string", "null"] },
+    "trip_id": { "type": "string", "minLength": 1 },
+    "vehicle_id": { "type": ["string", "null"] },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stop_id", "stop_sequence"],
+      "properties": {
+        "direction_id": { "type": ["integer", "null"], "enum": [0, 1, null] },
+        "schedule_relationship": { "type": ["string", "null"] },
+        "stop_id": { "type": "string", "minLength": 1 },
+        "stop_sequence": { "type": "integer", "minimum": 0 },
+        "predicted_arrival": { "type": ["string", "null"], "format": "date-time" },
+        "predicted_departure": { "type": ["string", "null"], "format": "date-time" },
+        "delay_seconds": { "type": ["integer", "null"] },
+        "stop_schedule_relationship": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
