@@ -3,20 +3,20 @@ from typing import Any
 
 from google.transit import gtfs_realtime_pb2
 
+
 def _to_iso(timestamp: int) -> str:
     return datetime.fromtimestamp(timestamp, UTC).isoformat()
 
-def _stop_time_to_iso(
-        event: gtfs_realtime_pb2.TripUpdate.StopTimeEvent
-) -> str | None:
+
+def _stop_time_to_iso(event: gtfs_realtime_pb2.TripUpdate.StopTimeEvent) -> str | None:
     if not event.HasField("time"):
         return None
 
     return _to_iso(event.time)
 
+
 def parse_trip_updates(
-        feed: gtfs_realtime_pb2.FeedMessage,
-        ingested_at: datetime
+    feed: gtfs_realtime_pb2.FeedMessage, ingested_at: datetime
 ) -> list[dict[str, Any]]:
     if not feed.header.HasField("timestamp"):
         raise ValueError("Feed header is missing timestamp field")
@@ -38,16 +38,11 @@ def parse_trip_updates(
             continue
 
         source_timestamp = (
-            trip_update.timestamp
-            if trip_update.HasField("timestamp")
-            else feed_timestamp
+            trip_update.timestamp if trip_update.HasField("timestamp") else feed_timestamp
         )
 
         for stop_update in trip_update.stop_time_update:
-            if (
-                not stop_update.stop_id
-                or not stop_update.HasField("stop_sequence")
-            ):
+            if not stop_update.stop_id or not stop_update.HasField("stop_sequence"):
                 continue
 
             delay_seconds = None
@@ -60,27 +55,19 @@ def parse_trip_updates(
                 delay_seconds = trip_update.delay
 
             event = {
-                "event_id": (
-                    f"{entity.id}:"
-                    f"{stop_update.stop_sequence}:"
-                    f"{source_timestamp}"
-                ),
+                "event_id": (f"{entity.id}:{stop_update.stop_sequence}:{source_timestamp}"),
                 "event_type": "trip_update",
                 "schema_version": 1,
                 "source": "mbta_gtfs_realtime",
                 "source_timestamp": _to_iso(source_timestamp),
-                "feed_timestamp":_to_iso(feed_timestamp),
-                "ingested_at":ingested_at_iso,
-                "published_at":published_at_iso,
+                "feed_timestamp": _to_iso(feed_timestamp),
+                "ingested_at": ingested_at_iso,
+                "published_at": published_at_iso,
                 "route_id": trip.route_id or None,
-                "trip_id":trip.trip_id,
+                "trip_id": trip.trip_id,
                 "vehicle_id": trip_update.vehicle.id or None,
                 "payload": {
-                    "direction_id": (
-                        trip.direction_id
-                        if trip.HasField("direction_id")
-                        else None
-                    ),
+                    "direction_id": (trip.direction_id if trip.HasField("direction_id") else None),
                     "schedule_relationship": (
                         gtfs_realtime_pb2.TripDescriptor.ScheduleRelationship.Name(
                             trip.schedule_relationship
@@ -99,8 +86,8 @@ def parse_trip_updates(
                         )
                         if stop_update.HasField("schedule_relationship")
                         else None
-                    )
-                }
+                    ),
+                },
             }
 
             events.append(event)
