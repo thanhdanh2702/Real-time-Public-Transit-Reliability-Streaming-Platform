@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transitpulse.local/contracts/service_alert_v1.json",
+  "title": "TransitPulse service alert event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "source",
+    "source_timestamp",
+    "feed_timestamp",
+    "ingested_at",
+    "published_at",
+    "alert_id",
+    "payload"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_type": {
+      "const": "service_alert"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "source": {
+      "const": "mbta_gtfs_realtime"
+    },
+    "source_timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "feed_timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ingested_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "alert_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cause",
+        "effect",
+        "severity",
+        "header_text",
+        "description_text",
+        "url",
+        "active_periods",
+        "informed_entities"
+      ],
+      "properties": {
+        "cause": {
+          "type": ["string", "null"],
+          "enum": [
+            "UNKNOWN_CAUSE",
+            "OTHER_CAUSE",
+            "TECHNICAL_PROBLEM",
+            "STRIKE",
+            "DEMONSTRATION",
+            "ACCIDENT",
+            "HOLIDAY",
+            "WEATHER",
+            "MAINTENANCE",
+            "CONSTRUCTION",
+            "POLICE_ACTIVITY",
+            "MEDICAL_EMERGENCY",
+            null
+          ]
+        },
+        "effect": {
+          "type": ["string", "null"],
+          "enum": [
+            "NO_SERVICE",
+            "REDUCED_SERVICE",
+            "SIGNIFICANT_DELAYS",
+            "DETOUR",
+            "ADDITIONAL_SERVICE",
+            "MODIFIED_SERVICE",
+            "OTHER_EFFECT",
+            "UNKNOWN_EFFECT",
+            "STOP_MOVED",
+            "NO_EFFECT",
+            "ACCESSIBILITY_ISSUE",
+            null
+          ]
+        },
+        "severity": {
+          "type": ["string", "null"],
+          "enum": [
+            "UNKNOWN_SEVERITY",
+            "INFO",
+            "WARNING",
+            "SEVERE",
+            null
+          ]
+        },
+        "header_text": {
+          "type": ["string", "null"]
+        },
+        "description_text": {
+          "type": ["string", "null"]
+        },
+        "tts_header_text": {
+          "type": ["string", "null"]
+        },
+        "tts_description_text": {
+          "type": ["string", "null"]
+        },
+        "url": {
+          "type": ["string", "null"],
+          "format": "uri"
+        },
+        "active_periods": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start", "end"],
+            "properties": {
+              "start": {
+                "type": ["string", "null"],
+                "format": "date-time"
+              },
+              "end": {
+                "type": ["string", "null"],
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        "informed_entities": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "agency_id",
+              "route_id",
+              "route_type",
+              "trip_id",
+              "stop_id",
+              "direction_id"
+            ],
+            "properties": {
+              "agency_id": {
+                "type": ["string", "null"]
+              },
+              "route_id": {
+                "type": ["string", "null"]
+              },
+              "route_type": {
+                "type": ["integer", "null"],
+                "minimum": 0
+              },
+              "trip_id": {
+                "type": ["string", "null"]
+              },
+              "stop_id": {
+                "type": ["string", "null"]
+              },
+              "direction_id": {
+                "type": ["integer", "null"],
+                "enum": [0, 1, null]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -33,6 +33,7 @@
       "additionalProperties": false,
       "required": ["latitude", "longitude"],
       "properties": {
+        "odometer": {"type": ["number", "null"],"minimum": 0},
         "latitude": { "type": "number", "minimum": -90, "maximum": 90 },
         "longitude": { "type": "number", "minimum": -180, "maximum": 180 },
         "bearing": { "type": ["number", "null"], "minimum": 0, "maximum": 360 },
