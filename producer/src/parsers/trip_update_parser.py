@@ -41,10 +41,9 @@ def parse_trip_updates(
             trip_update.timestamp if trip_update.HasField("timestamp") else feed_timestamp
         )
 
-        for stop_update in trip_update.stop_time_update:
-            if not stop_update.stop_id or not stop_update.HasField("stop_sequence"):
-                continue
+        stop_time_updates: list[dict[str, Any]] = []
 
+        for stop_update in trip_update.stop_time_update:
             delay_seconds = None
 
             if stop_update.arrival.HasField("delay"):
@@ -54,42 +53,53 @@ def parse_trip_updates(
             elif trip_update.HasField("delay"):
                 delay_seconds = trip_update.delay
 
-            event = {
-                "event_id": (f"{entity.id}:{stop_update.stop_sequence}:{source_timestamp}"),
-                "event_type": "trip_update",
-                "schema_version": 1,
-                "source": "mbta_gtfs_realtime",
-                "source_timestamp": _to_iso(source_timestamp),
-                "feed_timestamp": _to_iso(feed_timestamp),
-                "ingested_at": ingested_at_iso,
-                "published_at": published_at_iso,
-                "route_id": trip.route_id or None,
-                "trip_id": trip.trip_id,
-                "vehicle_id": trip_update.vehicle.id or None,
-                "payload": {
-                    "direction_id": (trip.direction_id if trip.HasField("direction_id") else None),
-                    "schedule_relationship": (
-                        gtfs_realtime_pb2.TripDescriptor.ScheduleRelationship.Name(
-                            trip.schedule_relationship
-                        )
-                        if trip.HasField("schedule_relationship")
-                        else None
+            stop_time_updates.append(
+                {
+                    "stop_id": stop_update.stop_id or None,
+                    "stop_sequence": (
+                        stop_update.stop_sequence if stop_update.HasField("stop_sequence") else None
                     ),
-                    "stop_id": stop_update.stop_id,
-                    "stop_sequence": stop_update.stop_sequence,
                     "predicted_arrival": _stop_time_to_iso(stop_update.arrival),
                     "predicted_departure": _stop_time_to_iso(stop_update.departure),
                     "delay_seconds": delay_seconds,
-                    "stop_schedule_relationship": (
+                    "schedule_relationship": (
                         gtfs_realtime_pb2.TripUpdate.StopTimeUpdate.ScheduleRelationship.Name(
                             stop_update.schedule_relationship
                         )
                         if stop_update.HasField("schedule_relationship")
                         else None
                     ),
-                },
-            }
+                }
+            )
 
-            events.append(event)
+        event = {
+            "event_id": (f"{entity.id}:{source_timestamp}"),
+            "event_type": "trip_update",
+            "schema_version": 1,
+            "source": "mbta_gtfs_realtime",
+            "source_timestamp": _to_iso(source_timestamp),
+            "feed_timestamp": _to_iso(feed_timestamp),
+            "ingested_at": ingested_at_iso,
+            "published_at": published_at_iso,
+            "route_id": trip.route_id or None,
+            "trip_id": trip.trip_id,
+            "vehicle_id": trip_update.vehicle.id or None,
+            "payload": {
+                "direction_id": (trip.direction_id if trip.HasField("direction_id") else None),
+                "schedule_relationship": (
+                    gtfs_realtime_pb2.TripDescriptor.ScheduleRelationship.Name(
+                        trip.schedule_relationship
+                    )
+                    if trip.HasField("schedule_relationship")
+                    else None
+                ),
+                "trip_delay_seconds": (
+                    trip_update.delay if trip_update.HasField("delay") else None
+                ),
+                "stop_time_updates": stop_time_updates,
+            },
+        }
+
+        events.append(event)
 
     return events

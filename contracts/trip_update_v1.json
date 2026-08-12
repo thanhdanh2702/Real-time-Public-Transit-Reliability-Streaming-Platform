@@ -8,7 +8,7 @@
     "event_id",
     "event_type",
     "schema_version",
-    "source",
+    "source", 
     "source_timestamp",
     "feed_timestamp",
     "ingested_at",
@@ -31,16 +31,63 @@
     "payload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["stop_id", "stop_sequence"],
+      "required": [
+        "direction_id",
+        "schedule_relationship",
+        "trip_delay_seconds",
+        "stop_time_updates"
+      ],
       "properties": {
         "direction_id": { "type": ["integer", "null"], "enum": [0, 1, null] },
         "schedule_relationship": { "type": ["string", "null"] },
-        "stop_id": { "type": "string", "minLength": 1 },
-        "stop_sequence": { "type": "integer", "minimum": 0 },
-        "predicted_arrival": { "type": ["string", "null"], "format": "date-time" },
-        "predicted_departure": { "type": ["string", "null"], "format": "date-time" },
-        "delay_seconds": { "type": ["integer", "null"] },
-        "stop_schedule_relationship": { "type": ["string", "null"] }
+        "trip_delay_seconds": { "type": ["integer", "null"] },
+        "stop_time_updates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "stop_id",
+              "stop_sequence",
+              "predicted_arrival",
+              "predicted_departure",
+              "delay_seconds",
+              "schedule_relationship"
+            ],
+            "properties": {
+              "stop_id": {
+                "type": ["string", "null"],
+                "minLength": 1
+              },
+              "stop_sequence": {
+                "type": ["integer", "null"],
+                "minimum": 0
+              },
+              "predicted_arrival": {
+                "type": ["string", "null"],
+                "format": "date-time"
+              },
+              "predicted_departure": {
+                "type": ["string", "null"],
+                "format": "date-time"
+              },
+              "delay_seconds": { "type": ["integer", "null"] },
+              "schedule_relationship": { "type": ["string", "null"] }
+            },
+            "anyOf": [
+              {
+                "properties": {
+                  "stop_id": { "type": "string", "minLength": 1 }
+                }
+              },
+              {
+                "properties": {
+                  "stop_sequence": { "type": "integer", "minimum": 0 }
+                }
+              }
+            ]
+          }
+        }
       }
     }
   }
