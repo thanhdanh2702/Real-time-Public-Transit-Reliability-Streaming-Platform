@@ -10,6 +10,7 @@ WORKDIR /app
 RUN addgroup --system transitpulse && adduser --system --ingroup transitpulse transitpulse
 
 COPY pyproject.toml README.md ./
+COPY contracts ./contracts
 COPY producer ./producer
 
 RUN python -m pip install --upgrade pip && python -m pip install ".[producer]"
