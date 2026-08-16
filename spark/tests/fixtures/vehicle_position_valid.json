@@ -1,0 +1,26 @@
+{
+  "event_id": "y1863:1786787113",
+  "event_type": "vehicle_position",
+  "schema_version": 1,
+  "source": "mbta_gtfs_realtime",
+  "source_timestamp": "2026-08-15T09:45:13+00:00",
+  "feed_timestamp": "2026-08-15T09:45:17+00:00",
+  "ingested_at": "2026-08-15T09:45:18.773217+00:00",
+  "published_at": "2026-08-15T09:45:18.773454+00:00",
+  "route_id": "45",
+  "trip_id": "76327346",
+  "vehicle_id": "y1863",
+  "payload": {
+    "latitude": 42.33568572998047,
+    "longitude": -71.08959197998047,
+    "bearing": 244.0,
+    "odometer": null,
+    "speed_mps": null,
+    "direction_id": 0,
+    "current_stop_sequence": 1,
+    "stop_id": "17867",
+    "current_status": "STOPPED_AT",
+    "vehicle_label": "1863",
+    "occupancy_status": "MANY_SEATS_AVAILABLE"
+  }
+}

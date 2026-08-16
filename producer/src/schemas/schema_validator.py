@@ -11,7 +11,7 @@ SCHEMA_FILES: dict[SchemaKey, str] = {
     ("vehicle_position", 1): "vehicle_position_v1.json",
     ("trip_update", 1): "trip_update_v1.json",
     ("service_alert", 1): "service_alert_v1.json",
-    ("dead_letter", 1): "dead_letter_v1.json"
+    ("dead_letter", 1): "dead_letter_v1.json",
 }
 
 
