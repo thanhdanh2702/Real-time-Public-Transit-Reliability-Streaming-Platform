@@ -9,6 +9,7 @@ def spark_session() -> SparkSession:
         .master("local[2]")
         .appName("transitpulse-tests")
         .config("spark.ui.enabled", "false")
+        .config("spark.jars.packages", "")
         .config("spark.sql.shuffle.partitions", "2")
         .getOrCreate()
     )

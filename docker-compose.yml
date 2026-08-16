@@ -99,13 +99,18 @@ services:
       - transitpulse
 
   spark-master:
-    image: ${SPARK_IMAGE:-apache/spark:4.2.0-scala2.13-java17-python3-ubuntu}
+    build:
+      context: .
+      dockerfile: spark/Dockerfile
+      args:
+        SPARK_IMAGE: ${SPARK_IMAGE:-apache/spark:4.2.0-scala2.13-java17-python3-ubuntu}
+    image: transitpulse-spark:local
     hostname: spark-master
     command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
     environment:
       SPARK_NO_DAEMONIZE: "true"
       SPARK_CONF_DIR: /opt/transitpulse/spark/conf
-      PYTHONPATH: /opt/transitpulse
+      PYTHONPATH: /opt/transitpulse:/opt/spark/python/lib/pyspark.zip:/opt/spark/python/lib/py4j-0.10.9.9-src.zip
       SPARK_MASTER_HOST: spark-master
       SPARK_MASTER_PORT: 7077
       SPARK_MASTER_WEBUI_PORT: 8080
@@ -121,13 +126,21 @@ services:
       - transitpulse
 
   spark-worker:
-    image: ${SPARK_IMAGE:-apache/spark:4.2.0-scala2.13-java17-python3-ubuntu}
+    build:
+      context: .
+      dockerfile: spark/Dockerfile
+      args:
+        SPARK_IMAGE: ${SPARK_IMAGE:-apache/spark:4.2.0-scala2.13-java17-python3-ubuntu}
+    image: transitpulse-spark:local
     hostname: spark-worker
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.worker.Worker
+      - spark://spark-master:7077
     environment:
       SPARK_NO_DAEMONIZE: "true"
       SPARK_CONF_DIR: /opt/transitpulse/spark/conf
-      PYTHONPATH: /opt/transitpulse
+      PYTHONPATH: /opt/transitpulse:/opt/spark/python/lib/pyspark.zip:/opt/spark/python/lib/py4j-0.10.9.9-src.zip
       SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-2}
       SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-2g}
       SPARK_WORKER_WEBUI_PORT: 8081
