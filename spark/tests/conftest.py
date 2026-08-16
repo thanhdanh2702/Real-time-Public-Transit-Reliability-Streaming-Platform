@@ -5,8 +5,7 @@ from pyspark.sql import SparkSession
 @pytest.fixture(scope="session")
 def spark_session() -> SparkSession:
     spark = (
-        SparkSession.builder
-        .master("local[2]")
+        SparkSession.builder.master("local[2]")
         .appName("transitpulse-tests")
         .config("spark.ui.enabled", "false")
         .config("spark.jars.packages", "")

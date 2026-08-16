@@ -8,8 +8,7 @@ def read_kafka_stream(
     starting_offsets: str = "latest",
 ) -> DataFrame:
     return (
-        spark.readStream
-        .format("kafka")
+        spark.readStream.format("kafka")
         .option("kafka.bootstrap.servers", bootstrap_servers)
         .option("subscribe", topic)
         .option("startingOffsets", starting_offsets)

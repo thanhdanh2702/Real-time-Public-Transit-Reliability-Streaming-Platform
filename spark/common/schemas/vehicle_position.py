@@ -4,7 +4,7 @@ from pyspark.sql.types import (
     StringType,
     StructField,
     StructType,
-    TimestampType
+    TimestampType,
 )
 
 VEHICLE_POSITION_PAYLOAD_SCHEMA = StructType(
@@ -19,7 +19,7 @@ VEHICLE_POSITION_PAYLOAD_SCHEMA = StructType(
         StructField("stop_id", StringType(), nullable=True),
         StructField("current_status", StringType(), nullable=True),
         StructField("vehicle_label", StringType(), nullable=True),
-        StructField("occupancy_status", StringType(), nullable=True)   
+        StructField("occupancy_status", StringType(), nullable=True),
     ]
 )
 
