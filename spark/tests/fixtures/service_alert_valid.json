@@ -1,0 +1,43 @@
+{
+  "event_id": "alert-1:1786787117",
+  "event_type": "service_alert",
+  "schema_version": 1,
+  "source": "mbta_gtfs_realtime",
+  "source_timestamp": "2026-08-15T09:45:17+00:00",
+  "feed_timestamp": "2026-08-15T09:45:17+00:00",
+  "ingested_at": "2026-08-15T09:45:18.773217+00:00",
+  "published_at": "2026-08-15T09:45:18.773454+00:00",
+  "alert_id": "alert-1",
+  "payload": {
+    "cause": "MAINTENANCE",
+    "effect": "DETOUR",
+    "severity": "WARNING",
+    "header_text": "Route 1 detour",
+    "description_text": "Route 1 is temporarily detoured.",
+    "url": null,
+    "active_periods": [
+      {
+        "start": "2026-08-15T09:45:17+00:00",
+        "end": "2026-08-16T09:45:17+00:00"
+      }
+    ],
+    "informed_entities": [
+      {
+        "agency_id": null,
+        "route_id": "1",
+        "route_type": 3,
+        "trip_id": null,
+        "stop_id": null,
+        "direction_id": 0
+      },
+      {
+        "agency_id": null,
+        "route_id": "1",
+        "route_type": 3,
+        "trip_id": null,
+        "stop_id": "stop-1",
+        "direction_id": 1
+      }
+    ]
+  }
+}
