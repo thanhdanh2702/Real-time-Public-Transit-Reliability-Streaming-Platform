@@ -11,7 +11,7 @@ VEHICLE_POSITION_PAYLOAD_SCHEMA = StructType(
     [
         StructField("latitude", DoubleType(), nullable=False),
         StructField("longitude", DoubleType(), nullable=False),
-        StructField("bearing", DoubleType(), nullable=False),
+        StructField("bearing", DoubleType(), nullable=True),
         StructField("odometer", DoubleType(), nullable=True),
         StructField("speed_mps", DoubleType(), nullable=True),
         StructField("direction_id", IntegerType(), nullable=True),
