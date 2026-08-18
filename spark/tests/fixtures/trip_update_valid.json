@@ -1,0 +1,36 @@
+{
+  "event_id": "trip-update-1:1786787113",
+  "event_type": "trip_update",
+  "schema_version": 1,
+  "source": "mbta_gtfs_realtime",
+  "source_timestamp": "2026-08-15T09:45:13+00:00",
+  "feed_timestamp": "2026-08-15T09:45:17+00:00",
+  "ingested_at": "2026-08-15T09:45:18.773217+00:00",
+  "published_at": "2026-08-15T09:45:18.773454+00:00",
+  "route_id": "1",
+  "trip_id": "trip-1",
+  "vehicle_id": "vehicle-1",
+  "payload": {
+    "direction_id": 0,
+    "schedule_relationship": "SCHEDULED",
+    "trip_delay_seconds": 90,
+    "stop_time_updates": [
+      {
+        "stop_id": "stop-1",
+        "stop_sequence": 1,
+        "predicted_arrival": "2026-08-15T09:50:13+00:00",
+        "predicted_departure": "2026-08-15T09:50:43+00:00",
+        "delay_seconds": 120,
+        "schedule_relationship": "SCHEDULED"
+      },
+      {
+        "stop_id": "stop-2",
+        "stop_sequence": 2,
+        "predicted_arrival": "2026-08-15T09:55:13+00:00",
+        "predicted_departure": "2026-08-15T09:55:43+00:00",
+        "delay_seconds": 180,
+        "schedule_relationship": null
+      }
+    ]
+  }
+}
