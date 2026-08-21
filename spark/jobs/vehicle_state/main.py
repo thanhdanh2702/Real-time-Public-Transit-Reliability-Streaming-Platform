@@ -35,22 +35,23 @@ def main() -> None:
 
     try:
         raw_df = read_kafka_stream(
+            spark=spark,
             bootstrap_servers=bootstrap_servers,
             topic=vehicle_topic,
             starting_offsets=starting_offsets,
         )
 
-        parsed_df = parsing.parse_vehicle_position_events(raw_df=raw_df)
+        parsed_df = parsing.parse_vehicle_position_events(raw_df)
 
-        checked_df = vehicle_position_quality(df=parsed_df)
+        checked_df = vehicle_position_quality(parsed_df)
 
-        valid_df, _invalid_df = split_vehicle_position(checked_df=checked_df)
+        valid_df, _invalid_df = split_vehicle_position(checked_df)
 
         event_time_df = event_time.add_event_time(valid_df)
 
         deduplicated_df = deduplication.deduplicate_events(event_time_df)
 
-        vehicle_state_df = build_vehicle_state(df=deduplicated_df)
+        vehicle_state_df = build_vehicle_state(deduplicated_df)
 
         query = start_console_sink(
             df=vehicle_state_df,
