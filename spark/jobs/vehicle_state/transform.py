@@ -8,10 +8,10 @@ def build_vehicle_state(df: DataFrame) -> DataFrame:
         F.col("event_id"),
         F.col("vehicle_id"),
         # event time
-        F.col("event_time"),
+        F.col("source_timestamp").alias("event_timestamp"),
         F.col("feed_timestamp"),
         F.col("published_at"),
-        F.col("ingestion_at"),
+        F.col("ingested_at"),
         # Transit identity
         F.col("route_id"),
         F.col("trip_id"),
