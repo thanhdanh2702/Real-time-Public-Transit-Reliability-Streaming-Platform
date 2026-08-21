@@ -10,8 +10,7 @@ def start_console_sink(
     num_rows: int = 20,
 ) -> StreamingQuery:
     return (
-        df.writeStream
-        .format("console")
+        df.writeStream.format("console")
         .outputMode("append")
         .queryName(query_name)
         .option("checkpointLocation", checkpoint_location)
