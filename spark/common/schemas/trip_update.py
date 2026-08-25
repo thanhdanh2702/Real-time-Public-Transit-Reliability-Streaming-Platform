@@ -20,7 +20,7 @@ STOP_TIME_UPDATE_SCHEMA = StructType(
 
 PAYLOAD_SCHEMA = StructType(
     [
-        StructField("direction_id", IntegerType(), nullable=False),
+        StructField("direction_id", IntegerType(), nullable=True),
         StructField("schedule_relationship", StringType(), nullable=True),
         StructField("trip_delay_seconds", IntegerType(), nullable=True),
         StructField(
@@ -34,7 +34,7 @@ PAYLOAD_SCHEMA = StructType(
 TRIP_UPDATE_SCHEMA = StructType(
     [
         StructField("event_id", StringType(), nullable=False),
-        StructField("event_Type", StringType(), nullable=False),
+        StructField("event_type", StringType(), nullable=False),
         StructField("schema_version", IntegerType(), nullable=False),
         StructField("source", StringType(), nullable=False),
         StructField("source_timestamp", TimestampType(), nullable=False),
