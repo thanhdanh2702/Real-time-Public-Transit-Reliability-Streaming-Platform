@@ -1,8 +1,8 @@
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import col, from_json
 
-from spark.common.schemas.vehicle_position import VEHICLE_POSITION_SCHEMA
 from spark.common.schemas.trip_update import TRIP_UPDATE_SCHEMA
+from spark.common.schemas.vehicle_position import VEHICLE_POSITION_SCHEMA
 
 
 def parse_vehicle_position_events(raw_df: DataFrame) -> DataFrame:
