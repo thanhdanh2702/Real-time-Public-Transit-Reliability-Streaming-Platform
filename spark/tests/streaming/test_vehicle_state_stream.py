@@ -7,7 +7,7 @@ from spark.common.transforms.deduplication import deduplicate_events
 from spark.common.transforms.event_time import add_event_time
 
 
-def test_vehicle_events_are_deduplicated_across_micro_batches(
+def test_events_are_deduplicated_across_micro_batches(
     spark_session: SparkSession,
     tmp_path,
 ) -> None:
@@ -19,7 +19,7 @@ def test_vehicle_events_are_deduplicated_across_micro_batches(
         str(input_path)
     )
     output_df = deduplicate_events(add_event_time(stream_df))
-    query_name = f"vehicle_dedup_{uuid4().hex}"
+    query_name = f"event_dedup_{uuid4().hex}"
 
     query = (
         output_df.writeStream.format("memory")
@@ -30,7 +30,7 @@ def test_vehicle_events_are_deduplicated_across_micro_batches(
     )
 
     event = {
-        "event_id": "vehicle-1:2026-08-21T10:00:00Z",
+        "event_id": "event-1:2026-08-21T10:00:00Z",
         "source_timestamp": "2026-08-21T10:00:00+00:00",
     }
 
