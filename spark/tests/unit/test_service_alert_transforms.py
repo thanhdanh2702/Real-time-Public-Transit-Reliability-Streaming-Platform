@@ -7,6 +7,7 @@ from pyspark.sql import DataFrame, SparkSession
 
 from spark.common.transforms.parsing import parse_service_alert_events
 from spark.common.validation.data_quality import service_alert_quality, split_service_alert
+from spark.jobs.service_alert.transform import transform_service_alert
 
 FIXTURE_PATH = Path(__file__).resolve().parents[1] / "fixtures/service_alert_valid.json"
 
@@ -87,3 +88,21 @@ def test_service_alert_quality_splits_invalid_nested_values(
         invalid_route_type["event_id"],
         invalid_period["event_id"],
     }
+
+
+def test_transform_service_alert_explodes_and_flattens_informed_entities(
+    spark_session: SparkSession,
+) -> None:
+    parsed_df = parse_service_alert_events(_raw_service_alert_df(spark_session, [_valid_event()]))
+
+    result_df = transform_service_alert(parsed_df)
+    rows = result_df.orderBy("direction_id").collect()
+
+    assert [(row.stop_id, row.direction_id) for row in rows] == [
+        (None, 0),
+        ("stop-1", 1),
+    ]
+    assert rows[0].alert_id == "alert-1"
+    assert rows[0].cause == "MAINTENANCE"
+    assert len(rows[0].active_periods) == 1
+    assert "payload" not in result_df.columns
