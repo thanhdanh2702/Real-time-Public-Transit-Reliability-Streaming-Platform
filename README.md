@@ -68,10 +68,6 @@ The `apps` profile is intentionally not started by default because producer, Spa
 
 ## Implementation order
 
-The combined TripUpdate/bunching console job is available. See
-[the runbook](docs/testing/trip-update-bunching-runbook.md) for the single entry point,
-Docker commands, checkpoint/state semantics, deterministic smoke test and local deployment limits.
-
 1. Validate and record GTFS Realtime snapshots.
 2. Implement the Kafka producer and contracts.
 3. Implement Spark event-time parsing, watermarking, and deduplication.

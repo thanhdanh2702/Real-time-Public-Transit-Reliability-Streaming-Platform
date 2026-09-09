@@ -23,12 +23,6 @@ bunching:
   confirmation_observations: 2
   cooldown_seconds: 600
   ignore_stale_vehicles: true
-  # Finalize snapshots only after newer feed timestamps pass this lateness bound.
-  snapshot_lateness_seconds: 180
-  max_prediction_age_seconds: 180
-  max_observation_gap_seconds: 180
-  max_events_per_batch: 10000
-  max_buffered_events: 50000
 
 stalled_vehicle:
   max_movement_meters: 50
