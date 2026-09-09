@@ -1,16 +1,38 @@
 import os
+from pathlib import Path
+
+import yaml
 
 from spark.common.session import create_spark_session
-from spark.common.sinks.console_sink import start_console_sink
 from spark.common.sources.kafka_source import read_kafka_stream
-from spark.common.transforms import deduplication, event_time, parsing
-from spark.common.validation import data_quality
-from spark.jobs.route_reliability.transform import transform_trip_update
+from spark.jobs.bunching_detector.pipeline import BunchingSettings, start_bunching_query
 
-APP_NAME = "transitpulse-trip-update"
+APP_NAME = "transitpulse-trip-update-bunching"
 DEFAULT_KAFKA_BOOTSTRAP_SERVERS = "kafka:9092"
 DEFAULT_TRIP_UPDATES_TOPIC = "transit.trip_updates.v1"
-DEFAULT_CHECKPOINT_LOCATION = "/opt/spark/checkpoints/trip-updates-console-v1"
+DEFAULT_CHECKPOINT_LOCATION = "/opt/spark/checkpoints/trip-update-bunching-v1"
+
+
+def load_settings() -> BunchingSettings:
+    default_path = Path(__file__).resolve().parents[3] / "configs/thresholds.yaml"
+    path = Path(os.getenv("THRESHOLDS_CONFIG_PATH", str(default_path)))
+    config = yaml.safe_load(path.read_text())
+    bunching = config["bunching"]
+    routes_path = Path(
+        os.getenv("ROUTES_CONFIG_PATH", str(default_path.with_name("routes.example.yaml")))
+    )
+    routes = yaml.safe_load(routes_path.read_text())
+    selected_routes = tuple(
+        route for route in routes["allowlist"] if route not in routes.get("exclude", [])
+    )
+    return BunchingSettings(
+        route_ids=selected_routes,
+        **{
+            name: bunching[name]
+            for name in BunchingSettings.__dataclass_fields__
+            if name in bunching and name != "route_ids"
+        },
+    )
 
 
 def main() -> None:
@@ -20,6 +42,9 @@ def main() -> None:
     starting_offset = os.getenv("KAFKA_STARTING_OFFSETS", "latest")
     checkpoint = os.getenv("TRIP_UPDATE_CHECKPOINT_LOCATION", DEFAULT_CHECKPOINT_LOCATION)
 
+    settings = load_settings()
+    if "://" in checkpoint:
+        raise ValueError("This local state backend requires a filesystem checkpoint path")
     spark = create_spark_session(APP_NAME)
 
     try:
@@ -28,24 +53,15 @@ def main() -> None:
             bootstrap_servers=kafka_servers,
             topic=topic,
             starting_offsets=starting_offset,
+            max_offsets_per_trigger=settings.max_events_per_batch,
         )
 
-        parsed_df = parsing.parse_trip_update_events(raw_df)
-
-        checked_df = data_quality.trip_update_quality(parsed_df)
-
-        valid_df, _invalid_df = data_quality.split_trip_update(checked_df)
-
-        event_df = event_time.add_event_time(valid_df)
-
-        dedup_df = deduplication.deduplicate_events(event_df)
-
-        res_df = transform_trip_update(dedup_df)
-
-        query = start_console_sink(
-            df=res_df,
-            checkpoint_location=checkpoint,
-            query_name=APP_NAME,
+        query = start_bunching_query(
+            spark,
+            raw_df,
+            Path(checkpoint),
+            settings,
+            trigger_interval=os.getenv("TRIP_UPDATE_TRIGGER_INTERVAL", "10 seconds"),
         )
 
         query.awaitTermination()

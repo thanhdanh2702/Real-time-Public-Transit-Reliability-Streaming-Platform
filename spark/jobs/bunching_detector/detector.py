@@ -8,20 +8,32 @@ DEFAULT_HEADWAY_THRESHOLD_SECONDS = 120
 def detect_bunching_candidates(
     df: DataFrame, headway_threshold_seconds: int = DEFAULT_HEADWAY_THRESHOLD_SECONDS
 ) -> DataFrame:
+    if headway_threshold_seconds <= 0:
+        raise ValueError("headway_threshold_seconds must be positive")
     trip_status = F.coalesce(F.col("trip_schedule_relationship"), F.lit("SCHEDULED"))
 
     stop_status = F.coalesce(F.col("stop_schedule_relationship"), F.lit("SCHEDULED"))
 
     eligible_df = (
         df.filter(F.col("feed_timestamp").isNotNull())
-        .filter(F.col("route_id").isNotNull())
-        .filter(F.col("direction_id").isNotNull())
-        .filter(F.col("stop_id").isNotNull())
-        .filter(F.col("trip_id").isNotNull())
+        .filter(F.length(F.trim("route_id")) > 0)
+        .filter(F.col("direction_id").isin(0, 1))
+        .filter(F.length(F.trim("stop_id")) > 0)
+        .filter(F.length(F.trim("trip_id")) > 0)
         .filter(F.col("predicted_arrival").isNotNull())
         .filter(F.col("predicted_arrival") >= F.col("feed_timestamp"))
         .filter(~trip_status.isin("CANCELED", "DELETED"))
         .filter(~stop_status.isin("SKIPPED", "NO_DATA"))
+    )
+
+    # A loop may visit the same stop repeatedly; compare each trip's NEXT visit only.
+    visit_window = Window.partitionBy(
+        "feed_timestamp", "route_id", "direction_id", "stop_id", "trip_id"
+    ).orderBy(F.col("event_timestamp").desc(), "predicted_arrival", "vehicle_id")
+    eligible_df = (
+        eligible_df.withColumn("_visit", F.row_number().over(visit_window))
+        .filter(F.col("_visit") == 1)
+        .drop("_visit")
     )
 
     arrival_window = Window.partitionBy(
@@ -41,6 +53,11 @@ def detect_bunching_candidates(
 
     return result_df.filter(
         F.col("leading_trip_id").isNotNull()
+        & (
+            F.col("leading_vehicle_id").isNull()
+            | F.col("vehicle_id").isNull()
+            | (F.col("leading_vehicle_id") != F.col("vehicle_id"))
+        )
         & (F.col("leading_trip_id") != F.col("trip_id"))
         & (F.col("headway_seconds") >= 0)
         & (F.col("headway_seconds") <= headway_threshold_seconds)
