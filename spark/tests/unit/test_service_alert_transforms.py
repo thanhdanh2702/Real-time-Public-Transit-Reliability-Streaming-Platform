@@ -98,11 +98,11 @@ def test_transform_service_alert_explodes_and_flattens_informed_entities(
     result_df = transform_service_alert(parsed_df)
     rows = result_df.orderBy("direction_id").collect()
 
-    assert [(row.stop_id, row.direction_id) for row in rows] == [
-        (None, 0),
-        ("stop-1", 1),
+    assert [(row.informed_entity_index, row.stop_id, row.direction_id) for row in rows] == [
+        (0, None, 0),
+        (1, "stop-1", 1),
     ]
     assert rows[0].alert_id == "alert-1"
     assert rows[0].cause == "MAINTENANCE"
-    assert len(rows[0].active_periods) == 1
+    assert len(json.loads(rows[0].active_periods)) == 1
     assert "payload" not in result_df.columns
