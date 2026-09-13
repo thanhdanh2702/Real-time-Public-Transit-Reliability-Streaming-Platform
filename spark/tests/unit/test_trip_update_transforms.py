@@ -85,10 +85,13 @@ def test_transform_trip_update_explodes_and_flattens_stop_updates(
     result_df = transform_trip_update(parsed_df)
     rows = result_df.orderBy("stop_sequence").collect()
 
-    assert [(row.stop_id, row.delay_seconds) for row in rows] == [
-        ("stop-1", 120),
-        ("stop-2", 180),
+    assert [(row.stop_update_index, row.stop_id, row.delay_seconds) for row in rows] == [
+        (0, "stop-1", 120),
+        (1, "stop-2", 180),
     ]
     assert rows[0].trip_id == "trip-1"
     assert rows[0].event_timestamp is not None
+    assert rows[0].source == "mbta_gtfs_realtime"
+    assert rows[0].schema_version == 1
+    assert rows[0].kafka_topic == "transit.trip_updates.v1"
     assert "payload" not in result_df.columns
