@@ -3,11 +3,17 @@ from pyspark.sql import functions as F
 
 
 def transform_trip_update(df: DataFrame) -> DataFrame:
-
-    explode_df = df.withColumn("stop_update", F.explode(F.col("payload.stop_time_updates")))
+    explode_df = df.select(
+        "*",
+        F.posexplode(F.col("payload.stop_time_updates")).alias(
+            "stop_update_index",
+            "stop_update",
+        ),
+    )
 
     return explode_df.select(
         F.col("event_id"),
+        F.col("stop_update_index"),
         F.col("source_timestamp").alias("event_timestamp"),
         F.col("feed_timestamp"),
         F.col("ingested_at"),
@@ -24,6 +30,9 @@ def transform_trip_update(df: DataFrame) -> DataFrame:
         F.col("stop_update.predicted_departure").alias("predicted_departure"),
         F.col("stop_update.delay_seconds").alias("delay_seconds"),
         F.col("stop_update.schedule_relationship").alias("stop_schedule_relationship"),
+        F.col("source"),
+        F.col("schema_version"),
+        F.col("kafka_topic"),
         F.col("kafka_partition"),
         F.col("kafka_offset"),
         F.col("kafka_timestamp"),
