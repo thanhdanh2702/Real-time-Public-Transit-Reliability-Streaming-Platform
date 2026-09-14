@@ -8,7 +8,8 @@ USER root
 
 RUN python3 -m pip install --no-cache-dir \
     "pytest>=8,<10" \
-    "pytest-cov>=6,<8"
+    "pytest-cov>=6,<8" \
+    "psycopg[binary]>=3.2,<4"
 
 RUN mkdir -p /opt/transitpulse/spark /opt/transitpulse/configs /opt/spark/checkpoints \
     && chown -R 185:0 /opt/transitpulse /opt/spark/checkpoints
