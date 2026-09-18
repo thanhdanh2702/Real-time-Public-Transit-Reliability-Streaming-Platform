@@ -11,7 +11,8 @@ RUN python3 -m pip install --no-cache-dir \
     "pytest-cov>=6,<8" \
     "psycopg[binary]>=3.2,<4"
 
-RUN mkdir -p /opt/transitpulse/spark /opt/transitpulse/configs /opt/spark/checkpoints \
+RUN mkdir -p /opt/transitpulse/spark /opt/transitpulse/configs \
+        /opt/transitpulse/.ivy2 /opt/spark/checkpoints \
     && chown -R 185:0 /opt/transitpulse /opt/spark/checkpoints
 
 COPY --chown=185:0 spark /opt/transitpulse/spark

@@ -27,7 +27,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-transitpulse}
       POSTGRES_USER: ${POSTGRES_USER:-transitpulse_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       TZ: UTC
       PGTZ: UTC
     ports:
@@ -117,6 +117,11 @@ services:
       SPARK_MASTER_HOST: spark-master
       SPARK_MASTER_PORT: 7077
       SPARK_MASTER_WEBUI_PORT: 8080
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-transitpulse}
+      POSTGRES_USER: ${POSTGRES_USER:-transitpulse_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     ports:
       - "7077:7077"
       - "${SPARK_MASTER_UI_PORT:-8081}:8080"
@@ -124,6 +129,7 @@ services:
       - ./spark:/opt/transitpulse/spark
       - ./configs:/opt/transitpulse/configs:ro
       - spark-checkpoints:/opt/spark/checkpoints
+      - spark-ivy-cache:/opt/transitpulse/.ivy2
     restart: unless-stopped
     networks:
       - transitpulse
@@ -281,3 +287,4 @@ volumes:
   kafka-data:
   postgres-data:
   spark-checkpoints:
+  spark-ivy-cache:
