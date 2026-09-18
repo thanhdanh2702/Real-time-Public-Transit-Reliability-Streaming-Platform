@@ -82,3 +82,34 @@ def test_build_vehicle_state_flattens_payload(
     assert state.latitude == 42.33568572998047
     assert state.event_timestamp is not None
     assert "payload" not in vehicle_state_df.columns
+
+
+def test_vehicle_quality_checks_optional_measurement_boundaries(
+    spark_session: SparkSession,
+) -> None:
+    cases = [
+        ("speed_mps", None, True),
+        ("speed_mps", 0.0, True),
+        ("speed_mps", -0.1, False),
+        ("odometer", None, True),
+        ("odometer", 0.0, True),
+        ("odometer", -1.0, False),
+        ("bearing", None, True),
+        ("bearing", 0.0, True),
+        ("bearing", 360.0, True),
+        ("bearing", -1.0, False),
+        ("bearing", 361.0, False),
+    ]
+    events = []
+    for index, (field, value, _) in enumerate(cases):
+        event = _valid_event()
+        event["event_id"] = str(index)
+        event["payload"][field] = value
+        events.append(event)
+
+    checked = vehicle_position_quality(
+        parse_vehicle_position_events(_raw_vehicle_df(spark_session, events))
+    )
+    assert {row.event_id: row._is_valid for row in checked.collect()} == {
+        str(index): expected for index, (_, _, expected) in enumerate(cases)
+    }

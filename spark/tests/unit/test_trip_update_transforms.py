@@ -63,10 +63,25 @@ def test_trip_update_quality_splits_valid_and_invalid_events(
     invalid_event["event_id"] = "trip-update-invalid-direction"
     invalid_event["payload"]["direction_id"] = 2
 
+    missing_stop_reference_event = _valid_event()
+    missing_stop_reference_event["event_id"] = "trip-update-missing-stop-reference"
+    missing_stop_reference_event["payload"]["stop_time_updates"][0]["stop_id"] = None
+    missing_stop_reference_event["payload"]["stop_time_updates"][0]["stop_sequence"] = None
+
+    negative_stop_sequence_event = _valid_event()
+    negative_stop_sequence_event["event_id"] = "trip-update-negative-stop-sequence"
+    negative_stop_sequence_event["payload"]["stop_time_updates"][0]["stop_sequence"] = -1
+
     parsed_df = parse_trip_update_events(
         _raw_trip_update_df(
             spark_session,
-            [valid_event, valid_empty_event, invalid_event],
+            [
+                valid_event,
+                valid_empty_event,
+                invalid_event,
+                missing_stop_reference_event,
+                negative_stop_sequence_event,
+            ],
         )
     )
     valid_df, invalid_df = split_trip_update(trip_update_quality(parsed_df))
@@ -75,7 +90,11 @@ def test_trip_update_quality_splits_valid_and_invalid_events(
     invalid_ids = {row.event_id for row in invalid_df.select("event_id").collect()}
 
     assert valid_ids == {valid_event["event_id"], valid_empty_event["event_id"]}
-    assert invalid_ids == {invalid_event["event_id"]}
+    assert invalid_ids == {
+        invalid_event["event_id"],
+        missing_stop_reference_event["event_id"],
+        negative_stop_sequence_event["event_id"],
+    }
 
 
 def test_transform_trip_update_explodes_and_flattens_stop_updates(

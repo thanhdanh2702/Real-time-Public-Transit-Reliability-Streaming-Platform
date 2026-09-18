@@ -2,14 +2,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import spark.jobs.service_alert.main as service_alert_main
+import spark.jobs.route_reliability.main as trip_update_main
 
 
-@pytest.mark.parametrize("custom_checkpoint", [None, "/tmp/alerts-checkpoint"])
 @pytest.mark.parametrize("failure_stage", [None, "sink", "await"])
-def test_main_connects_service_alert_stream(
+def test_main_writes_trip_stop_updates_to_postgres(
     monkeypatch: pytest.MonkeyPatch,
-    custom_checkpoint: str | None,
     failure_stage: str | None,
 ) -> None:
     spark = MagicMock()
@@ -21,14 +19,12 @@ def test_main_connects_service_alert_stream(
     invalid_df = object()
     event_time_df = object()
     deduplicated_df = object()
-    alert_df = object()
+    trip_stop_df = object()
 
     monkeypatch.setenv("KAFKA_BOOTSTRAP_SERVERS", "broker:19092")
-    monkeypatch.setenv("KAFKA_SERVICE_ALERTS_TOPIC", "alerts.test")
+    monkeypatch.setenv("KAFKA_TRIP_UPDATES_TOPIC", "trip-updates.test")
     monkeypatch.setenv("KAFKA_STARTING_OFFSETS", "earliest")
-    monkeypatch.delenv("SERVICE_ALERT_CHECKPOINT_LOCATION", raising=False)
-    if custom_checkpoint is not None:
-        monkeypatch.setenv("SERVICE_ALERT_CHECKPOINT_LOCATION", custom_checkpoint)
+    monkeypatch.setenv("TRIP_UPDATE_CHECKPOINT_LOCATION", "/tmp/trip-update-checkpoint")
     monkeypatch.setenv("POSTGRES_HOST", "database.test")
     monkeypatch.setenv("POSTGRES_PORT", "15432")
     monkeypatch.setenv("POSTGRES_DB", "transit_test")
@@ -42,38 +38,38 @@ def test_main_connects_service_alert_stream(
     split_events = MagicMock(return_value=(valid_df, invalid_df))
     add_event_time = MagicMock(return_value=event_time_df)
     deduplicate = MagicMock(return_value=deduplicated_df)
-    transform = MagicMock(return_value=alert_df)
+    transform = MagicMock(return_value=trip_stop_df)
     start_sink = MagicMock(return_value=query)
     if failure_stage == "sink":
         start_sink.side_effect = RuntimeError("sink failed")
     elif failure_stage == "await":
         query.awaitTermination.side_effect = RuntimeError("await failed")
 
-    monkeypatch.setattr(service_alert_main, "create_spark_session", create_session)
-    monkeypatch.setattr(service_alert_main, "read_kafka_stream", read_stream)
-    monkeypatch.setattr(service_alert_main.parsing, "parse_service_alert_events", parse_events)
-    monkeypatch.setattr(service_alert_main.data_quality, "service_alert_quality", check_quality)
-    monkeypatch.setattr(service_alert_main.data_quality, "split_service_alert", split_events)
-    monkeypatch.setattr(service_alert_main.event_time, "add_event_time", add_event_time)
+    monkeypatch.setattr(trip_update_main, "create_spark_session", create_session)
+    monkeypatch.setattr(trip_update_main, "read_kafka_stream", read_stream)
+    monkeypatch.setattr(trip_update_main.parsing, "parse_trip_update_events", parse_events)
+    monkeypatch.setattr(trip_update_main.data_quality, "trip_update_quality", check_quality)
+    monkeypatch.setattr(trip_update_main.data_quality, "split_trip_update", split_events)
+    monkeypatch.setattr(trip_update_main.event_time, "add_event_time", add_event_time)
     monkeypatch.setattr(
-        service_alert_main.deduplication,
+        trip_update_main.deduplication,
         "deduplicate_events",
         deduplicate,
     )
-    monkeypatch.setattr(service_alert_main, "transform_service_alert", transform)
-    monkeypatch.setattr(service_alert_main, "start_postgres_sink", start_sink)
+    monkeypatch.setattr(trip_update_main, "transform_trip_update", transform)
+    monkeypatch.setattr(trip_update_main, "start_postgres_sink", start_sink)
 
     if failure_stage is None:
-        service_alert_main.main()
+        trip_update_main.main()
     else:
         with pytest.raises(RuntimeError, match=f"{failure_stage} failed"):
-            service_alert_main.main()
+            trip_update_main.main()
 
-    create_session.assert_called_once_with("transitpulse-service-alert")
+    create_session.assert_called_once_with("transitpulse-trip-update")
     read_stream.assert_called_once_with(
         spark=spark,
         bootstrap_servers="broker:19092",
-        topic="alerts.test",
+        topic="trip-updates.test",
         starting_offsets="earliest",
     )
     parse_events.assert_called_once_with(raw_df)
@@ -83,7 +79,7 @@ def test_main_connects_service_alert_stream(
     deduplicate.assert_called_once_with(event_time_df)
     transform.assert_called_once_with(deduplicated_df)
     start_sink.assert_called_once_with(
-        df=alert_df,
+        df=trip_stop_df,
         connection={
             "host": "database.test",
             "port": 15432,
@@ -92,12 +88,9 @@ def test_main_connects_service_alert_stream(
             "password": "test-password",
         },
         schema="staging",
-        table="service_alert_entities",
-        checkpoint_location=(
-            custom_checkpoint or "/opt/spark/checkpoints/service-alert-postgres-v1"
-        ),
-        query_name="transitpulse-service-alert",
-        json_columns=("active_periods",),
+        table="trip_stop_updates",
+        checkpoint_location="/tmp/trip-update-checkpoint",
+        query_name="transitpulse-trip-update",
     )
     if failure_stage == "sink":
         query.awaitTermination.assert_not_called()
@@ -109,33 +102,21 @@ def test_main_connects_service_alert_stream(
 def test_main_stops_spark_when_stream_setup_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    spark = MagicMock()
     monkeypatch.setenv("POSTGRES_PASSWORD", "test-password")
     monkeypatch.setenv("POSTGRES_PORT", "5432")
+    spark = MagicMock()
     monkeypatch.setattr(
-        service_alert_main,
+        trip_update_main,
         "create_spark_session",
         MagicMock(return_value=spark),
     )
     monkeypatch.setattr(
-        service_alert_main,
+        trip_update_main,
         "read_kafka_stream",
         MagicMock(side_effect=RuntimeError("Kafka unavailable")),
     )
 
     with pytest.raises(RuntimeError, match="Kafka unavailable"):
-        service_alert_main.main()
+        trip_update_main.main()
 
     spark.stop.assert_called_once_with()
-
-
-def test_missing_password_fails_before_creating_spark(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
-    monkeypatch.setenv("POSTGRES_PORT", "5432")
-    create_session = MagicMock()
-    monkeypatch.setattr(service_alert_main, "create_spark_session", create_session)
-
-    with pytest.raises(KeyError, match="POSTGRES_PASSWORD"):
-        service_alert_main.main()
-
-    create_session.assert_not_called()

@@ -106,3 +106,44 @@ def test_transform_service_alert_explodes_and_flattens_informed_entities(
     assert rows[0].cause == "MAINTENANCE"
     assert len(json.loads(rows[0].active_periods)) == 1
     assert "payload" not in result_df.columns
+
+
+def test_alert_quality_rejects_null_elements_and_malformed_periods(
+    spark_session: SparkSession,
+) -> None:
+    cases = [
+        ("informed_entities", [None], False),
+        ("informed_entities", [], False),
+        ("informed_entities", None, False),
+        ("active_periods", [None], False),
+        ("active_periods", None, False),
+        ("active_periods", [{"start": "bad-date", "end": None}], False),
+        ("active_periods", [{"start": None, "end": "bad-date"}], False),
+        ("active_periods", [], True),
+        ("active_periods", [{"start": None, "end": None}], True),
+        ("active_periods", [{"start": "2026-08-15T00:00:00Z", "end": None}], True),
+        ("active_periods", [{"start": None, "end": "2026-08-16T00:00:00Z"}], True),
+    ]
+    events = []
+    for index, (field, value, _) in enumerate(cases):
+        event = _valid_event()
+        event["event_id"] = str(index)
+        event["payload"][field] = value
+        events.append(event)
+
+    checked = service_alert_quality(
+        parse_service_alert_events(_raw_service_alert_df(spark_session, events))
+    )
+    rows = checked.collect()
+    assert {row.event_id: row._is_valid for row in rows} == {
+        str(index): expected for index, (_, _, expected) in enumerate(cases)
+    }
+    # Invalid events retain the original message for debugging or a future DLQ.
+    assert json.loads(rows[5].raw_value)["payload"]["active_periods"][0]["start"] == "bad-date"
+
+    valid_df, invalid_df = split_service_alert(checked)
+    # Exercise projection/filtering too: Spark must not prune the parse-error check.
+    assert {
+        row.event_id for row in transform_service_alert(valid_df).select("event_id").collect()
+    } == {str(index) for index, (_, _, expected) in enumerate(cases) if expected}
+    assert invalid_df.count() == sum(not expected for _, _, expected in cases)
