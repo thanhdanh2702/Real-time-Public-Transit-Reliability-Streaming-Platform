@@ -22,6 +22,9 @@ def vehicle_position_condition() -> Column:
         & F.col("payload.latitude").between(-90.0, 90.0)
         & F.col("payload.longitude").isNotNull()
         & F.col("payload.longitude").between(-180.0, 180.0)
+        & (F.col("payload.bearing").isNull() | F.col("payload.bearing").between(0.0, 360.0))
+        & (F.col("payload.odometer").isNull() | (F.col("payload.odometer") >= 0))
+        & (F.col("payload.speed_mps").isNull() | (F.col("payload.speed_mps") >= 0))
     )
 
     return F.coalesce(condition, F.lit(False))
@@ -29,6 +32,18 @@ def vehicle_position_condition() -> Column:
 
 def trip_update_condition() -> Column:
     direction_id = F.col("payload.direction_id")
+    stop_time_updates = F.col("payload.stop_time_updates")
+
+    valid_stop_time_updates = F.forall(
+        stop_time_updates,
+        lambda stop: (
+            (
+                (stop["stop_id"].isNotNull() & (F.length(F.trim(stop["stop_id"])) > 0))
+                | stop["stop_sequence"].isNotNull()
+            )
+            & (stop["stop_sequence"].isNull() | (stop["stop_sequence"] >= 0))
+        ),
+    )
 
     condition = (
         F.col("event_id").isNotNull()
@@ -43,7 +58,8 @@ def trip_update_condition() -> Column:
         & F.col("trip_id").isNotNull()
         & (F.length(F.trim(F.col("trip_id"))) > 0)
         & F.col("payload").isNotNull()
-        & F.col("payload.stop_time_updates").isNotNull()
+        & stop_time_updates.isNotNull()
+        & valid_stop_time_updates
         & (direction_id.isNull() | direction_id.isin(0, 1))
     )
 
@@ -57,7 +73,8 @@ def service_alert_condition() -> Column:
     valid_informed_entities = F.forall(
         informed_entities,
         lambda entity: (
-            (entity["direction_id"].isNull() | entity["direction_id"].isin(0, 1))
+            entity.isNotNull()
+            & (entity["direction_id"].isNull() | entity["direction_id"].isin(0, 1))
             & (entity["route_type"].isNull() | (entity["route_type"] >= 0))
         ),
     )
@@ -65,7 +82,12 @@ def service_alert_condition() -> Column:
     valid_active_periods = F.forall(
         active_periods,
         lambda period: (
-            period["start"].isNull() | period["end"].isNull() | (period["start"] <= period["end"])
+            period.isNotNull()
+            & (
+                period["start"].isNull()
+                | period["end"].isNull()
+                | (period["start"] <= period["end"])
+            )
         ),
     )
 
@@ -73,6 +95,7 @@ def service_alert_condition() -> Column:
         F.col("event_id").isNotNull()
         & (F.length(F.trim(F.col("event_id"))) > 0)
         & (F.col("event_type") == "service_alert")
+        & F.col("_corrupt_record").isNull()
         & (F.col("schema_version") == 1)
         & (F.col("source") == "mbta_gtfs_realtime")
         & F.col("source_timestamp").isNotNull()

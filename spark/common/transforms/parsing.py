@@ -1,5 +1,6 @@
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import col, from_json
+from pyspark.sql.types import StringType, StructField, StructType
 
 from spark.common.schemas.service_alert import SERVICE_ALERT_SCHEMA
 from spark.common.schemas.trip_update import TRIP_UPDATE_SCHEMA
@@ -77,7 +78,22 @@ def parse_service_alert_events(raw_df: DataFrame) -> DataFrame:
         col("timestamp").alias("kafka_timestamp"),
     )
 
-    parsed_df = kafka_df.withColumn("event", from_json(col("raw_value"), SERVICE_ALERT_SCHEMA))
+    # Preserve parse failures (e.g. malformed optional timestamps) for quality checks.
+    # Extend a copy so the producer's event schema remains unchanged.
+    parse_schema = StructType(
+        [
+            *SERVICE_ALERT_SCHEMA.fields,
+            StructField("_corrupt_record", StringType(), True),
+        ]
+    )
+    parsed_df = kafka_df.withColumn(
+        "event",
+        from_json(
+            col("raw_value"),
+            parse_schema,
+            {"mode": "PERMISSIVE", "columnNameOfCorruptRecord": "_corrupt_record"},
+        ),
+    )
 
     return parsed_df.select(
         "event.*",

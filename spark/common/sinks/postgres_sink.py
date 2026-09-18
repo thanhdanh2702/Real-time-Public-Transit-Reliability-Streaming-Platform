@@ -1,9 +1,9 @@
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from itertools import chain
 from typing import Any
 
-from pyspark.sql import DataFrame
-from pyspark.sql.streaming import StreamingQuery
+from pyspark.sql import DataFrame, Row
+from pyspark.sql.streaming.query import StreamingQuery
 
 
 def write_postgres_batch(
@@ -18,7 +18,7 @@ def write_postgres_batch(
     columns = tuple(batch_df.columns)
     json_columns_set = set(json_columns)
 
-    def write_partition(rows) -> None:
+    def write_partition(rows: Iterator[Row]) -> None:
         import psycopg
         from psycopg import sql
 

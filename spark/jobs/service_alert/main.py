@@ -1,7 +1,8 @@
 import os
 
+from spark.common.config import postgres_connection_from_env
 from spark.common.session import create_spark_session
-from spark.common.sinks.console_sink import start_console_sink
+from spark.common.sinks.postgres_sink import start_postgres_sink
 from spark.common.sources.kafka_source import read_kafka_stream
 from spark.common.transforms import deduplication, event_time, parsing
 from spark.common.validation import data_quality
@@ -10,7 +11,10 @@ from spark.jobs.service_alert.transform import transform_service_alert
 APP_NAME = "transitpulse-service-alert"
 DEFAULT_KAFKA_BOOTSTRAP_SERVERS = "kafka:9092"
 DEFAULT_SERVICE_ALERTS_TOPIC = "transit.service_alerts.v1"
-DEFAULT_CHECKPOINT_LOCATION = "/opt/spark/checkpoints/service-alert-console-v1"
+DEFAULT_CHECKPOINT_LOCATION = "/opt/spark/checkpoints/service-alert-postgres-v1"
+
+POSTGRES_SCHEMA = "staging"
+POSTGRES_TABLE = "service_alert_entities"
 
 
 def main() -> None:
@@ -27,6 +31,8 @@ def main() -> None:
         "SERVICE_ALERT_CHECKPOINT_LOCATION",
         DEFAULT_CHECKPOINT_LOCATION,
     )
+
+    postgres_connection = postgres_connection_from_env()
 
     spark = create_spark_session(APP_NAME)
 
@@ -45,10 +51,14 @@ def main() -> None:
         deduplicated_df = deduplication.deduplicate_events(event_time_df)
         service_alert_df = transform_service_alert(deduplicated_df)
 
-        query = start_console_sink(
+        query = start_postgres_sink(
             df=service_alert_df,
+            connection=postgres_connection,
+            schema=POSTGRES_SCHEMA,
+            table=POSTGRES_TABLE,
             checkpoint_location=checkpoint_location,
             query_name=APP_NAME,
+            json_columns=("active_periods",),
         )
         query.awaitTermination()
     finally:

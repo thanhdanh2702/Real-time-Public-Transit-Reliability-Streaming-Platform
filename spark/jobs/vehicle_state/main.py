@@ -1,7 +1,8 @@
 import os
 
+from spark.common.config import postgres_connection_from_env
 from spark.common.session import create_spark_session
-from spark.common.sinks.console_sink import start_console_sink
+from spark.common.sinks.postgres_sink import start_postgres_sink
 from spark.common.sources.kafka_source import read_kafka_stream
 from spark.common.transforms import deduplication, event_time, parsing
 from spark.common.validation.data_quality import split_vehicle_position, vehicle_position_quality
@@ -10,7 +11,10 @@ from spark.jobs.vehicle_state.transform import build_vehicle_state
 APP_NAME = "transitpulse-vehicle-state"
 DEFAULT_KAFKA_BOOTSTRAP_SERVERS = "kafka:9092"
 DEFAULT_VEHICLE_TOPIC = "transit.vehicle_positions.v1"
-DEFAULT_CHECKPOINT_LOCATION = "/opt/spark/checkpoints/vehicle-state-console-v1"
+DEFAULT_CHECKPOINT_LOCATION = "/opt/spark/checkpoints/vehicle-state-postgres-v1"
+
+POSTGRES_SCHEMA = "staging"
+POSTGRES_TABLE = "vehicle_positions"
 
 
 def main() -> None:
@@ -31,6 +35,7 @@ def main() -> None:
         DEFAULT_CHECKPOINT_LOCATION,
     )
 
+    postgres_connection = postgres_connection_from_env()
     spark = create_spark_session(APP_NAME)
 
     try:
@@ -53,8 +58,11 @@ def main() -> None:
 
         vehicle_state_df = build_vehicle_state(deduplicated_df)
 
-        query = start_console_sink(
+        query = start_postgres_sink(
             df=vehicle_state_df,
+            connection=postgres_connection,
+            schema=POSTGRES_SCHEMA,
+            table=POSTGRES_TABLE,
             checkpoint_location=checkpoint_location,
             query_name=APP_NAME,
         )
