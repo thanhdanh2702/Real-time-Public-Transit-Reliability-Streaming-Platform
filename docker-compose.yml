@@ -21,6 +21,47 @@ x-airflow-common: &airflow-common
   networks:
     - transitpulse
 
+x-spark-job-environment: &spark-job-environment
+  SPARK_CONF_DIR: /opt/transitpulse/spark/conf
+  PYTHONPATH: /opt/transitpulse:/opt/spark/python/lib/pyspark.zip:/opt/spark/python/lib/py4j-0.10.9.9-src.zip
+  PYTHONUNBUFFERED: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  KAFKA_STARTING_OFFSETS: ${KAFKA_STARTING_OFFSETS:-latest}
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ${POSTGRES_DB:-transitpulse}
+  POSTGRES_USER: ${POSTGRES_USER:-transitpulse_admin}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+
+x-spark-job-common: &spark-job-common
+  image: transitpulse-spark:local
+  profiles: ["streaming"]
+  working_dir: /opt/transitpulse
+  restart: unless-stopped
+  stop_grace_period: 60s
+  volumes:
+    - ./spark:/opt/transitpulse/spark:ro
+    - ./configs:/opt/transitpulse/configs:ro
+    - spark-checkpoints:/opt/spark/checkpoints
+    - spark-ivy-cache:/opt/transitpulse/.ivy2
+  depends_on:
+    postgres:
+      condition: service_healthy
+    kafka-init:
+      condition: service_completed_successfully
+    spark-master:
+      condition: service_healthy
+    spark-worker:
+      condition: service_healthy
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  networks:
+    - transitpulse
+
 services:
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:17.10-alpine}
@@ -130,6 +171,12 @@ services:
       - ./configs:/opt/transitpulse/configs:ro
       - spark-checkpoints:/opt/spark/checkpoints
       - spark-ivy-cache:/opt/transitpulse/.ivy2
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('spark-master', 7077), timeout=2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
     restart: unless-stopped
     networks:
       - transitpulse
@@ -150,8 +197,8 @@ services:
       SPARK_NO_DAEMONIZE: "true"
       SPARK_CONF_DIR: /opt/transitpulse/spark/conf
       PYTHONPATH: /opt/transitpulse:/opt/spark/python/lib/pyspark.zip:/opt/spark/python/lib/py4j-0.10.9.9-src.zip
-      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-2}
-      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-2g}
+      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-3}
+      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-4g}
       SPARK_WORKER_WEBUI_PORT: 8081
     ports:
       - "${SPARK_WORKER_UI_PORT:-8082}:8081"
@@ -159,11 +206,102 @@ services:
       - ./spark:/opt/transitpulse/spark
       - ./configs:/opt/transitpulse/configs:ro
       - spark-checkpoints:/opt/spark/checkpoints
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('localhost', 8081), timeout=2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
     depends_on:
-      - spark-master
+      spark-master:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - transitpulse
+
+  spark-job-vehicle:
+    <<: *spark-job-common
+    hostname: spark-job-vehicle
+    environment:
+      <<: *spark-job-environment
+      VEHICLE_STATE_CHECKPOINT_LOCATION: ${VEHICLE_STATE_CHECKPOINT_LOCATION:-/opt/spark/checkpoints/vehicle-state-postgres-v1}
+    command:
+      - /opt/spark/bin/spark-submit
+      - --master
+      - spark://spark-master:7077
+      - --deploy-mode
+      - client
+      - --driver-memory
+      - ${SPARK_DRIVER_MEMORY:-1g}
+      - --executor-memory
+      - ${SPARK_EXECUTOR_MEMORY:-1g}
+      - --conf
+      - spark.cores.max=1
+      - --conf
+      - spark.executor.cores=1
+      - --conf
+      - spark.dynamicAllocation.enabled=false
+      - --conf
+      - spark.driver.host=spark-job-vehicle
+      - --conf
+      - spark.driver.bindAddress=0.0.0.0
+      - /opt/transitpulse/spark/jobs/vehicle_state/main.py
+
+  spark-job-trip:
+    <<: *spark-job-common
+    hostname: spark-job-trip
+    environment:
+      <<: *spark-job-environment
+      TRIP_UPDATE_CHECKPOINT_LOCATION: ${TRIP_UPDATE_CHECKPOINT_LOCATION:-/opt/spark/checkpoints/trip-updates-postgres-v1}
+    command:
+      - /opt/spark/bin/spark-submit
+      - --master
+      - spark://spark-master:7077
+      - --deploy-mode
+      - client
+      - --driver-memory
+      - ${SPARK_DRIVER_MEMORY:-1g}
+      - --executor-memory
+      - ${SPARK_EXECUTOR_MEMORY:-1g}
+      - --conf
+      - spark.cores.max=1
+      - --conf
+      - spark.executor.cores=1
+      - --conf
+      - spark.dynamicAllocation.enabled=false
+      - --conf
+      - spark.driver.host=spark-job-trip
+      - --conf
+      - spark.driver.bindAddress=0.0.0.0
+      - /opt/transitpulse/spark/jobs/route_reliability/main.py
+
+  spark-job-alert:
+    <<: *spark-job-common
+    hostname: spark-job-alert
+    environment:
+      <<: *spark-job-environment
+      SERVICE_ALERT_CHECKPOINT_LOCATION: ${SERVICE_ALERT_CHECKPOINT_LOCATION:-/opt/spark/checkpoints/service-alert-postgres-v1}
+    command:
+      - /opt/spark/bin/spark-submit
+      - --master
+      - spark://spark-master:7077
+      - --deploy-mode
+      - client
+      - --driver-memory
+      - ${SPARK_DRIVER_MEMORY:-1g}
+      - --executor-memory
+      - ${SPARK_EXECUTOR_MEMORY:-1g}
+      - --conf
+      - spark.cores.max=1
+      - --conf
+      - spark.executor.cores=1
+      - --conf
+      - spark.dynamicAllocation.enabled=false
+      - --conf
+      - spark.driver.host=spark-job-alert
+      - --conf
+      - spark.driver.bindAddress=0.0.0.0
+      - /opt/transitpulse/spark/jobs/service_alert/main.py
 
   kafka-ui:
     image: ${KAFKA_UI_IMAGE:-provectuslabs/kafka-ui:v0.7.2}
@@ -232,7 +370,7 @@ services:
       dockerfile: producer/Dockerfile
       args:
         PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
-    profiles: ["apps"]
+    profiles: ["apps", "streaming"]
     environment:
       MBTA_API_KEY: ${MBTA_API_KEY:-}
       MBTA_VEHICLE_POSITIONS_URL: ${MBTA_VEHICLE_POSITIONS_URL:-https://cdn.mbta.com/realtime/VehiclePositions.pb}

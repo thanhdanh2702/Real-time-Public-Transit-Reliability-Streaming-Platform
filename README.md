@@ -2,7 +2,8 @@
 
 TransitPulse is a portfolio-grade public-transit streaming platform built around Apache Kafka and Spark Structured Streaming. It ingests MBTA GTFS Realtime feeds, computes operational metrics and alerts, stores serving data in PostgreSQL, and presents results through Streamlit.
 
-This repository is currently a configured scaffold. Business-logic files are intentionally empty so implementation can follow the project blueprint step by step.
+The Kafka producer and three Spark-to-PostgreSQL flows are implemented. Analytical models,
+dashboard features, and orchestration remain subsequent project stages.
 
 ## Data sources
 
@@ -30,7 +31,22 @@ MBTA/MassDOT remains the provider of the source data. Review and follow the curr
 5. Run `make tools-up` if Kafka UI is needed.
 6. Run `make smoke` to verify the infrastructure.
 
-The `apps` profile is intentionally not started by default because producer, Spark jobs, and dashboard application files are empty in this scaffold.
+The `streaming` profile starts the producer and all three Spark jobs. The `apps` profile
+also includes the dashboard scaffold and is not needed to collect streaming data.
+
+## Run all three streaming flows
+
+Set `SPARK_WORKER_CORES=3` and `SPARK_WORKER_MEMORY=4g` in `.env`, then run:
+
+```bash
+docker compose build spark-master spark-worker
+docker compose --profile streaming up -d
+docker compose logs -f --tail 50 spark-job-vehicle spark-job-trip spark-job-alert
+```
+
+Each job has its own driver container and checkpoint, and requests at most one executor core.
+See [parallel Spark jobs](docs/testing/parallel-spark-jobs.md) for resource sizing,
+restart commands, and verification results.
 
 ## Service endpoints
 
