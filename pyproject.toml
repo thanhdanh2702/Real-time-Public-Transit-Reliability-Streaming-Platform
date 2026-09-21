@@ -13,6 +13,9 @@ authors = [{ name = "TransitPulse contributors" }]
 dependencies = []
 
 [project.optional-dependencies]
+gtfs = [
+  "psycopg[binary]>=3.2,<4",
+]
 producer = [
   "confluent-kafka>=2.6,<3",
   "gtfs-realtime-bindings>=1.0,<2",

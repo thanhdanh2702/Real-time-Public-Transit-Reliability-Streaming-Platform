@@ -49,6 +49,31 @@ def test_rejects_bad_csv(tmp_path, text):
         list(read_csv(archive, "trips", ("trip_id",)))
 
 
+def test_connection_env_and_cli(tmp_path, monkeypatch, capsys):
+    from scripts import load_gtfs_static as loader
+
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    with pytest.raises(ValueError, match="POSTGRES_PASSWORD"):
+        loader.connection_from_env()
+    monkeypatch.setenv("POSTGRES_PASSWORD", "test-only")
+    monkeypatch.setenv("POSTGRES_PORT", "5433")
+    assert loader.connection_from_env()["port"] == 5433
+    monkeypatch.setattr("sys.argv", ["loader", str(tmp_path / "feed.zip")])
+    monkeypatch.setattr(loader, "load_gtfs", lambda path, connection: {"routes": 1})
+    loader.main()
+    assert "raw.gtfs_routes: 1 rows" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "text", ["feed_version,feed_end_date\n", "feed_version,feed_end_date\n,20261231\n"]
+)
+def test_invalid_metadata_before_connection(tmp_path, text):
+    from scripts.load_gtfs_static import load_gtfs
+
+    with pytest.raises(ValueError, match="feed_info"):
+        load_gtfs(make_zip(tmp_path, feed_info=text), {})
+
+
 @pytest.fixture
 def database():
     if os.getenv("RUN_POSTGRES_INTEGRATION") != "1":
@@ -63,7 +88,10 @@ def database():
     with psycopg.connect(**connection, autocommit=True) as db:
         db.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
         try:
-            path = Path(__file__).resolve().parents[1] / "database/migrations/005_create_gtfs_static_tables.sql"
+            path = (
+                Path(__file__).resolve().parents[1]
+                / "database/migrations/005_create_gtfs_static_tables.sql"
+            )
             db.execute(path.read_text().replace("raw.", f"{schema}."))
             yield connection, schema, db
         finally:
@@ -72,6 +100,8 @@ def database():
 
 @pytest.mark.integration
 def test_load_replay_and_rollback(tmp_path, database):
+    import psycopg
+
     from scripts.load_gtfs_static import load_gtfs
 
     connection, schema, db = database
@@ -86,22 +116,46 @@ def test_load_replay_and_rollback(tmp_path, database):
     assert "0002" in before[0]
     # A changed parent must not replace the previous feed if the last file fails.
     path = make_zip(tmp_path, calendar_dates="service_id,date,exception_type\nS,20260201,7\n")
-    with pytest.raises(Exception):
+    with pytest.raises(psycopg.errors.CheckViolation):
         load_gtfs(path, connection, schema=schema)
     assert db.execute(f"SELECT * FROM {schema}.gtfs_stop_times").fetchall() == before
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("changes", [
-    {"trips": "route_id,service_id,trip_id\nmissing,S,T\n"},
-    {"stops": "stop_id,stop_name\n0002,A\n0002,B\n"},
-    {"calendar": None},
-    {"routes": "route_id,route_type\n"},
-])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"trips": "route_id,service_id,trip_id\nmissing,S,T\n"},
+        {"stops": "stop_id,stop_name\n0002,A\n0002,B\n"},
+        {"calendar": None},
+        {"routes": "route_id,route_type\n"},
+        {"stop_times": "trip_id,stop_id,stop_sequence\nmissing,0002,1\n"},
+        {"stop_times": "trip_id,stop_id,stop_sequence\nT,missing,1\n"},
+        {"trips": "route_id,service_id,trip_id\n001,missing,T\n"},
+        {"stops": "stop_id,parent_station\n0002,missing\n"},
+    ],
+)
 def test_invalid_feed_leaves_database_empty(tmp_path, database, changes):
+    import psycopg
+
     from scripts.load_gtfs_static import load_gtfs
 
     connection, schema, db = database
-    with pytest.raises(Exception):
+    with pytest.raises((ValueError, psycopg.errors.UniqueViolation)):
         load_gtfs(make_zip(tmp_path, **changes), connection, schema=schema)
     assert db.execute(f"SELECT count(*) FROM {schema}.gtfs_routes").fetchone()[0] == 0
+
+
+@pytest.mark.integration
+def test_calendar_dates_only_and_expired_warning(tmp_path, database):
+    from scripts.load_gtfs_static import load_gtfs
+
+    connection, schema, _ = database
+    path = make_zip(
+        tmp_path,
+        calendar=FILES["calendar"].splitlines()[0] + "\n",
+        calendar_dates="service_id,date,exception_type\nS,20260201,1\n",
+        feed_info="feed_version,feed_end_date\nexpired,20000101\n",
+    )
+    with pytest.warns(UserWarning, match="expired"):
+        assert load_gtfs(path, connection, schema=schema)["calendar"] == 0
