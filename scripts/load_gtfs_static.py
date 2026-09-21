@@ -12,41 +12,28 @@ from zipfile import ZipFile
 import psycopg
 from psycopg import sql
 
-# Selected project fields, not every optional MBTA extension. Extra fields stay in the ZIP.
-COLUMNS = {
-    "routes": (
-        "route_id agency_id route_short_name route_long_name "
-        "route_type route_color route_text_color"
-    ),
-    "stops": (
-        "stop_id stop_code stop_name stop_lat stop_lon location_type "
-        "parent_station wheelchair_boarding platform_code"
-    ),
-    "trips": (
-        "trip_id route_id service_id trip_headsign trip_short_name direction_id "
-        "block_id shape_id wheelchair_accessible bikes_allowed"
-    ),
-    "stop_times": (
-        "trip_id stop_sequence stop_id arrival_time departure_time "
-        "stop_headsign pickup_type drop_off_type timepoint"
-    ),
-    "calendar": (
-        "service_id monday tuesday wednesday thursday friday saturday sunday start_date end_date"
-    ),
-    "calendar_dates": "service_id date exception_type",
-}
 REQUIRED = {
     "routes": ("route_id", "route_type"),
     "stops": ("stop_id",),
     "trips": ("trip_id", "route_id", "service_id"),
     "stop_times": ("trip_id", "stop_sequence", "stop_id"),
-    "calendar": tuple(COLUMNS["calendar"].split()),
-    "calendar_dates": tuple(COLUMNS["calendar_dates"].split()),
+    "calendar": (
+        "service_id",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+        "start_date",
+        "end_date",
+    ),
+    "calendar_dates": ("service_id", "date", "exception_type"),
 }
 
 
 def read_csv(archive, name, required):
-    """Stream rows directly from ZIP; never extract paths or read the whole file into RAM."""
     filename = f"{name}.txt"
     if archive.namelist().count(filename) != 1:
         raise ValueError(f"Expected exactly one {filename} at ZIP root")
@@ -65,7 +52,6 @@ def read_csv(archive, name, required):
 
 
 def connection_from_env():
-    """Credentials come from the environment, never from code or CLI arguments."""
     password = os.environ.get("POSTGRES_PASSWORD")
     if not password:
         raise ValueError("POSTGRES_PASSWORD is required")
@@ -79,38 +65,57 @@ def connection_from_env():
     }
 
 
-def validate_references(db):
-    """Validate relations in the temporary feed, including calendar_dates-only services."""
+def validate_references(db, schema):
     checks = {
         "trips.route_id": (
-            "SELECT 1 FROM new_trips t LEFT JOIN new_routes r USING(route_id) "
-            "WHERE r.route_id IS NULL"
+            "SELECT 1 FROM {trips} t LEFT JOIN {routes} r USING(route_id) WHERE r.route_id IS NULL"
         ),
         "stop_times.trip_id": (
-            "SELECT 1 FROM new_stop_times s LEFT JOIN new_trips t USING(trip_id) "
+            "SELECT 1 FROM {stop_times} s LEFT JOIN {trips} t USING(trip_id) "
             "WHERE t.trip_id IS NULL"
         ),
         "stop_times.stop_id": (
-            "SELECT 1 FROM new_stop_times s LEFT JOIN new_stops t USING(stop_id) "
+            "SELECT 1 FROM {stop_times} s LEFT JOIN {stops} t USING(stop_id) "
             "WHERE t.stop_id IS NULL"
         ),
         "trips.service_id": (
-            "SELECT 1 FROM new_trips t LEFT JOIN (SELECT service_id FROM new_calendar "
-            "UNION SELECT service_id FROM new_calendar_dates WHERE exception_type = 1) "
+            "SELECT 1 FROM {trips} t LEFT JOIN (SELECT service_id FROM {calendar} "
+            "UNION SELECT service_id FROM {calendar_dates} WHERE exception_type = 1) "
             "c USING(service_id) WHERE c.service_id IS NULL"
         ),
         "stops.parent_station": (
-            "SELECT 1 FROM new_stops s LEFT JOIN new_stops p ON s.parent_station = p.stop_id "
-            "WHERE s.parent_station IS NOT NULL AND p.stop_id IS NULL"
+            "SELECT 1 FROM {stops} s LEFT JOIN {stops} p ON s.parent_station = p.stop_id "
+            "WHERE NULLIF(s.parent_station, '') IS NOT NULL AND p.stop_id IS NULL"
         ),
     }
     for label, query in checks.items():
-        if db.execute(query + " LIMIT 1").fetchone():
+        statement = sql.SQL(query + " LIMIT 1").format(
+            **{name: sql.Identifier(schema, f"gtfs_{name}") for name in REQUIRED}
+        )
+        if db.execute(statement).fetchone():
             raise ValueError(f"Broken GTFS reference: {label}")
 
 
+def read_header(archive, name):
+    filename = f"{name}.txt"
+    if archive.namelist().count(filename) != 1:
+        raise ValueError(f"Expected exactly one {filename} at ZIP root")
+    with (
+        archive.open(filename) as source,
+        TextIOWrapper(source, encoding="utf-8-sig", newline="") as text,
+    ):
+        fields = next(csv.reader(text, strict=True), [])
+    if (
+        not fields
+        or any(not field for field in fields)
+        or len(fields) != len(set(fields))
+        or not set(REQUIRED[name]) <= set(fields)
+    ):
+        raise ValueError(f"Invalid header in {filename}")
+    return fields
+
+
 def load_gtfs(path, connection, *, schema="raw"):
-    """Replace only the six GTFS tables after every file passes checks."""
     counts = {}
     with ZipFile(path) as archive:
         if sum(item.file_size for item in archive.infolist()) > 1_000_000_000:
@@ -120,40 +125,43 @@ def load_gtfs(path, connection, *, schema="raw"):
             raise ValueError("Expected one feed_info row with a non-empty feed_version")
         if datetime.strptime(info[0]["feed_end_date"], "%Y%m%d").date() < datetime.now().date():
             warnings.warn("GTFS feed has expired; use for import tests only", stacklevel=2)
+        headers = {name: read_header(archive, name) for name in REQUIRED}
         with psycopg.connect(**connection) as db:
-            # Serialize loaders targeting the same schema. Released on commit/rollback.
             db.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"gtfs:{schema}",))
-            for name, field_list in COLUMNS.items():
-                columns = field_list.split()
-                temp = sql.Identifier(f"new_{name}")
-                target = sql.Identifier(schema, f"gtfs_{name}")
-                db.execute(
-                    sql.SQL("CREATE TEMP TABLE {} (LIKE {} INCLUDING ALL) ON COMMIT DROP").format(
-                        temp, target
+            # Reject schema drift rather than silently discarding source columns.
+            for name, columns in headers.items():
+                target_columns = {
+                    row[0]
+                    for row in db.execute(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_schema = %s AND table_name = %s",
+                        (schema, f"gtfs_{name}"),
                     )
-                )
-                statement = sql.SQL("COPY {} ({}) FROM STDIN").format(
-                    temp, sql.SQL(", ").join(map(sql.Identifier, [*columns, "feed_version"]))
-                )
-                counts[name] = 0
-                with db.cursor().copy(statement) as copy:
-                    for row in read_csv(archive, name, REQUIRED[name]):
-                        copy.write_row(
-                            [row.get(c) or None for c in columns] + [info[0]["feed_version"]]
-                        )
-                        counts[name] += 1
+                }
+                if not target_columns or set(columns) - target_columns:
+                    raise ValueError(
+                        f"Schema mismatch for {schema}.gtfs_{name}; use migration 005 "
+                        f"and ensure every CSV column exists: "
+                        f"{sorted(set(columns) - target_columns)}"
+                    )
+            for name, columns in headers.items():
+                target = sql.Identifier(schema, f"gtfs_{name}")
+                db.execute(sql.SQL("DELETE FROM {}").format(target))
+                statement = sql.SQL(
+                    "COPY {} ({}) FROM STDIN WITH (FORMAT CSV, HEADER TRUE)"
+                ).format(target, sql.SQL(", ").join(map(sql.Identifier, columns)))
+                with (
+                    archive.open(f"{name}.txt") as source,
+                    TextIOWrapper(source, encoding="utf-8-sig", newline="") as text,
+                    db.cursor() as cur,
+                ):
+                    with cur.copy(statement) as copy:
+                        while chunk := text.read(64 * 1024):
+                            copy.write(chunk)
+                    counts[name] = cur.rowcount
                 if not counts[name] and name not in ("calendar", "calendar_dates"):
                     raise ValueError(f"Empty required table: {name}")
-            validate_references(db)
-            for name in COLUMNS:
-                target = sql.Identifier(schema, f"gtfs_{name}")
-                # DELETE preserves table identity and MVCC readers; no CASCADE/TRUNCATE.
-                db.execute(sql.SQL("DELETE FROM {}").format(target))
-                db.execute(
-                    sql.SQL("INSERT INTO {} SELECT * FROM {}").format(
-                        target, sql.Identifier(f"new_{name}")
-                    )
-                )
+            validate_references(db, schema)
     return counts
 
 

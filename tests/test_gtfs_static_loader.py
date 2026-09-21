@@ -1,6 +1,8 @@
 """Small GTFS fixtures; database tests use a disposable schema only."""
 
+import csv
 import os
+from io import TextIOWrapper
 from pathlib import Path
 from uuid import uuid4
 from zipfile import ZipFile
@@ -159,3 +161,147 @@ def test_calendar_dates_only_and_expired_warning(tmp_path, database):
     )
     with pytest.warns(UserWarning, match="expired"):
         assert load_gtfs(path, connection, schema=schema)["calendar"] == 0
+
+
+@pytest.mark.integration
+def test_block_copy_preserves_source_columns_and_csv_quoting(tmp_path, database):
+    from scripts.load_gtfs_static import load_gtfs
+
+    connection, schema, db = database
+    path = make_zip(
+        tmp_path,
+        routes="\ufeffroute_desc,route_type,route_id,network_id\r\n"
+        '"Bus, ""express""\nBoston",3,001,rapid_transit\r\n',
+        stops='stop_id,stop_name,municipality,parent_station\n0002,"",Boston,""\n',
+        trips="trip_id,route_id,service_id,route_pattern_id\nT,001,S,001-_-0\n",
+        stop_times="trip_id,stop_sequence,stop_id,arrival_time,checkpoint_id\n"
+        "T,1,0002,25:10:00,matt\n",
+        calendar_dates="service_id,date,exception_type,holiday_name\n"
+        'S,20260201,2,"Ngày lễ, Boston"\n',
+    )
+    assert load_gtfs(path, connection, schema=schema)["routes"] == 1
+    assert db.execute(
+        f"SELECT route_id, route_desc, network_id FROM {schema}.gtfs_routes"
+    ).fetchone() == ("001", 'Bus, "express"\nBoston', "rapid_transit")
+    assert db.execute(
+        f"SELECT stop_name, municipality, parent_station FROM {schema}.gtfs_stops"
+    ).fetchone() == ("", "Boston", "")
+    assert db.execute(f"SELECT route_pattern_id FROM {schema}.gtfs_trips").fetchone() == (
+        "001-_-0",
+    )
+    assert db.execute(f"SELECT checkpoint_id FROM {schema}.gtfs_stop_times").fetchone() == ("matt",)
+    assert db.execute(f"SELECT holiday_name FROM {schema}.gtfs_calendar_dates").fetchone() == (
+        "Ngày lễ, Boston",
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"calendar_dates": "service_id,date,exception_type\nS,20260201,7\n"},
+        {"calendar_dates": "service_id,date,exception_type\nS,not-a-date,2\n"},
+        {"calendar_dates": "service_id,date,exception_type\nS,20260201,2,extra\n"},
+        {"calendar_dates": "service_id,date,exception_type\nS,20260201\n"},
+        {"calendar_dates": 'service_id,date,exception_type\n"unterminated'},
+        {"trips": "route_id,service_id,trip_id\nmissing,S,T\n"},
+        {"stops": "stop_id\n0002\n0002\n"},
+        {"routes": "route_id,route_type,unknown_column\n001,3,value\n"},
+        {"routes": "route_id,route_type,route_id\n001,3,001\n"},
+        {"routes": "route_id,route_type\n"},
+        {"calendar": None},
+    ],
+)
+def test_failed_refresh_preserves_all_six_tables(tmp_path, database, changes):
+    import psycopg
+
+    from scripts.load_gtfs_static import REQUIRED, load_gtfs
+
+    connection, schema, db = database
+    load_gtfs(make_zip(tmp_path), connection, schema=schema)
+    before = {
+        name: db.execute(f"SELECT * FROM {schema}.gtfs_{name}").fetchall() for name in REQUIRED
+    }
+    with pytest.raises((ValueError, psycopg.Error)):
+        load_gtfs(make_zip(tmp_path, **changes), connection, schema=schema)
+    for name, rows in before.items():
+        assert db.execute(f"SELECT * FROM {schema}.gtfs_{name}").fetchall() == rows
+
+
+@pytest.mark.integration
+def test_refresh_removes_obsolete_rows(tmp_path, database):
+    from scripts.load_gtfs_static import load_gtfs
+
+    connection, schema, db = database
+    load_gtfs(
+        make_zip(tmp_path, routes="route_id,route_type\n001,3\nOLD,3\n"), connection, schema=schema
+    )
+    load_gtfs(make_zip(tmp_path), connection, schema=schema)
+    assert db.execute(f"SELECT route_id FROM {schema}.gtfs_routes").fetchall() == [("001",)]
+
+
+@pytest.mark.integration
+def test_schema_creation_is_repeatable_and_preserves_rows(tmp_path, database):
+    from scripts.load_gtfs_static import REQUIRED, load_gtfs
+
+    connection, schema, db = database
+    load_gtfs(make_zip(tmp_path), connection, schema=schema)
+    before = {
+        name: db.execute(f"SELECT * FROM {schema}.gtfs_{name}").fetchall() for name in REQUIRED
+    }
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "database/migrations/005_create_gtfs_static_tables.sql"
+    ).read_text()
+    for _ in range(2):
+        db.execute(migration.replace("raw.", f"{schema}."))
+    for name, rows in before.items():
+        assert db.execute(f"SELECT * FROM {schema}.gtfs_{name}").fetchall() == rows
+    load_gtfs(
+        make_zip(tmp_path, routes="route_id,route_type,network_id\n001,3,bus\n"),
+        connection,
+        schema=schema,
+    )
+    assert db.execute(f"SELECT network_id FROM {schema}.gtfs_routes").fetchone() == ("bus",)
+
+
+@pytest.mark.integration
+def test_real_mbta_zip_matches_schema_and_loads(database):
+    from scripts.load_gtfs_static import REQUIRED, load_gtfs
+
+    zip_path = os.getenv("GTFS_TEST_ZIP")
+    if not zip_path:
+        pytest.skip("Set GTFS_TEST_ZIP for full-feed import")
+    connection, schema, db = database
+    with ZipFile(zip_path) as archive:
+        for name in REQUIRED:
+            with (
+                archive.open(f"{name}.txt") as source,
+                TextIOWrapper(source, encoding="utf-8-sig", newline="") as text,
+            ):
+                header = next(csv.reader(text))
+            columns = {
+                r[0]
+                for r in db.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = %s AND table_name = %s",
+                    (schema, f"gtfs_{name}"),
+                )
+            }
+            assert columns == set(header)
+    for _ in range(2):
+        counts = load_gtfs(zip_path, connection, schema=schema)
+        with ZipFile(zip_path) as archive:
+            for name in REQUIRED:
+                with (
+                    archive.open(f"{name}.txt") as source,
+                    TextIOWrapper(source, encoding="utf-8-sig", newline="") as text,
+                ):
+                    reader = csv.reader(text)
+                    next(reader)
+                    expected = sum(1 for _ in reader)
+                assert counts[name] == expected
+                assert (
+                    db.execute(f"SELECT count(*) FROM {schema}.gtfs_{name}").fetchone()[0]
+                    == expected
+                )
