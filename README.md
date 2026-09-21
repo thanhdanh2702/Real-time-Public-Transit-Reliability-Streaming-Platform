@@ -34,6 +34,12 @@ MBTA/MassDOT remains the provider of the source data. Review and follow the curr
 The `streaming` profile starts the producer and all three Spark jobs. The `apps` profile
 also includes the dashboard scaffold and is not needed to collect streaming data.
 
+## Load GTFS Static reference data
+
+See [GTFS Static COPY import](docs/testing/gtfs-static-import.md) for migration and
+run commands. The independent batch loader needs only PostgreSQL and copies all
+source columns from the six supported GTFS CSVs in one transaction.
+
 ## Run all three streaming flows
 
 Set `SPARK_WORKER_CORES=3` and `SPARK_WORKER_MEMORY=4g` in `.env`, then run:
