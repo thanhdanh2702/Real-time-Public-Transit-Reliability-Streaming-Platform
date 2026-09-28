@@ -30,7 +30,6 @@ models:
       +schema: intermediate
       +materialized: view
     marts:
-      +schema: mart
       +materialized: table
 
 seeds:
