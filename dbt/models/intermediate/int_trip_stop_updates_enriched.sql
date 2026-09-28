@@ -26,6 +26,8 @@ SELECT
     u.ingested_at,
     u.published_at,
     u.trip_id,
+    u.start_date,
+    u.start_time,
     u.route_id,
     u.vehicle_id,
     u.direction_id,

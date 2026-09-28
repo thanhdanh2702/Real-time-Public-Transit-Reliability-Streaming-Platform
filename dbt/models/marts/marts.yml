@@ -76,13 +76,20 @@ models:
     description: >
       One sampled trip per five-minute observation bucket. The model selects the
       newest TripUpdate event in the bucket and then its next predicted stop.
-      Until TripDescriptor.start_date is ingested, trip_id is only an MVP trip
-      instance identifier within an observation bucket.
+      A trip instance is identified from trip_id, start_date, and start_time.
     columns:
       - name: observation_bucket
         data_tests:
           - not_null
       - name: trip_id
+        data_tests:
+          - not_null
+      - name: start_date
+        description: GTFS service date supplied by TripDescriptor when available.
+      - name: start_time
+        description: Scheduled trip-instance start time supplied by TripDescriptor when available.
+      - name: trip_instance_key
+        description: Stable key built from trip_id, start_date, and start_time.
         data_tests:
           - not_null
       - name: event_id

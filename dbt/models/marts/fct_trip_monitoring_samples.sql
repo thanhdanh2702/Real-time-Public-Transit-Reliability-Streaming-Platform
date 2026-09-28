@@ -6,6 +6,12 @@ WITH stop_predictions AS (
             event_timestamp,
             TIMESTAMPTZ '2000-01-01 00:00:00+00'
         ) AS observation_bucket,
+        CONCAT_WS(
+            '|',
+            trip_id,
+            COALESCE(TO_CHAR(start_date, 'YYYYMMDD'), 'unknown-date'),
+            COALESCE(start_time, 'scheduled')
+        ) AS trip_instance_key,
         COALESCE(predicted_arrival, predicted_departure) AS next_prediction_timestamp
     FROM {{ ref('int_trip_stop_updates_enriched') }}
     WHERE COALESCE(predicted_arrival, predicted_departure) >= event_timestamp
@@ -15,7 +21,7 @@ ranked_events AS (
     SELECT
         *,
         DENSE_RANK() OVER (
-            PARTITION BY observation_bucket, trip_id
+            PARTITION BY observation_bucket, trip_instance_key
             ORDER BY event_timestamp DESC, event_id DESC
         ) AS event_rank
     FROM stop_predictions
@@ -25,7 +31,7 @@ ranked_stops AS (
     SELECT
         *,
         ROW_NUMBER() OVER (
-            PARTITION BY observation_bucket, trip_id
+            PARTITION BY observation_bucket, trip_instance_key
             ORDER BY next_prediction_timestamp, stop_sequence, stop_update_index
         ) AS stop_rank
     FROM ranked_events
@@ -120,6 +126,9 @@ SELECT
     feed_timestamp,
     ingested_at,
     trip_id,
+    start_date,
+    start_time,
+    trip_instance_key,
     resolved_route_id AS route_id,
     COALESCE(direction_id, scheduled_direction_id, -1) AS direction_id,
     vehicle_id,

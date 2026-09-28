@@ -43,6 +43,8 @@ TRIP_UPDATE_SCHEMA = StructType(
         StructField("published_at", TimestampType(), nullable=False),
         StructField("route_id", StringType(), nullable=True),
         StructField("trip_id", StringType(), nullable=False),
+        StructField("start_date", StringType(), nullable=True),
+        StructField("start_time", StringType(), nullable=True),
         StructField("vehicle_id", StringType(), nullable=True),
         StructField(
             "payload",
