@@ -43,3 +43,8 @@ snapshots:
 vars:
   incremental_lookback_hours: 2
   project_timezone: America/New_York
+  monitoring_bucket_minutes: 5
+  predicted_late_threshold_seconds: 300
+  dashboard_route_type: 3
+  realtime_freshness_seconds: 90
+  alert_freshness_seconds: 600

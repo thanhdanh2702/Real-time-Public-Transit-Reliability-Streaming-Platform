@@ -1,0 +1,178 @@
+version: 2
+
+models:
+  - name: dim_dates
+    description: >
+      One row per calendar date covered by the current GTFS feed, used for local
+      dashboard date filters and trend grouping.
+    columns:
+      - name: date_day
+        data_tests:
+          - not_null
+          - unique
+      - name: date_key
+        data_tests:
+          - not_null
+          - unique
+
+  - name: dim_routes
+    description: One row per route from the current GTFS static feed.
+    columns:
+      - name: route_id
+        description: Stable route identifier from GTFS.
+        data_tests:
+          - not_null
+          - unique
+      - name: route_type
+        description: GTFS transport mode; 3 represents bus service.
+
+  - name: dim_stops
+    description: One row per stop from the current GTFS static feed.
+    columns:
+      - name: stop_id
+        description: Stable stop identifier from GTFS.
+        data_tests:
+          - not_null
+          - unique
+      - name: stop_name
+        description: Passenger-facing stop name.
+      - name: municipality
+        description: Municipality supplied by the MBTA static feed.
+      - name: stop_lat
+        description: Stop latitude in WGS84 coordinates.
+      - name: stop_lon
+        description: Stop longitude in WGS84 coordinates.
+
+  - name: vehicle_latest_state
+    description: >
+      Latest stored position for each vehicle. Freshness is evaluated when the view
+      is queried; a stored row is not automatically an actively running vehicle.
+    config:
+      materialized: view
+    columns:
+      - name: vehicle_id
+        data_tests:
+          - not_null
+          - unique
+      - name: event_id
+        data_tests:
+          - not_null
+          - unique
+      - name: event_timestamp
+        data_tests:
+          - not_null
+      - name: route_id
+        description: Route resolved from the realtime event or its GTFS trip.
+      - name: latitude
+        description: Latest stored vehicle latitude.
+      - name: longitude
+        description: Latest stored vehicle longitude.
+      - name: source_age_seconds
+        description: Age of the source event when the view is queried.
+      - name: is_fresh
+        description: True when source_age_seconds is within the configured realtime threshold.
+
+  - name: fct_trip_monitoring_samples
+    description: >
+      One sampled trip per five-minute observation bucket. The model selects the
+      newest TripUpdate event in the bucket and then its next predicted stop.
+      Until TripDescriptor.start_date is ingested, trip_id is only an MVP trip
+      instance identifier within an observation bucket.
+    columns:
+      - name: observation_bucket
+        data_tests:
+          - not_null
+      - name: trip_id
+        data_tests:
+          - not_null
+      - name: event_id
+        data_tests:
+          - not_null
+      - name: observation_local_date
+        description: Observation date in America/New_York.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_dates')
+                field: date_day
+      - name: route_id
+        description: Route resolved from the realtime update or GTFS schedule.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_routes')
+                field: route_id
+      - name: stop_id
+        description: The next predicted stop selected for this sample.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_stops')
+                field: stop_id
+      - name: delay_basis
+        description: Whether delay was calculated from arrival or departure timestamps.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [arrival, departure]
+      - name: predicted_delay_seconds
+        description: Prediction timestamp minus the nearest matching scheduled timestamp.
+      - name: predicted_lateness_seconds
+        description: Non-negative delay used for lateness metrics; null stays unknown.
+      - name: is_predicted_late
+        description: True when predicted delay exceeds the configured five-minute threshold.
+
+  - name: route_health_5m
+    description: >
+      Route and direction health calculated from trip monitoring samples. One row
+      represents one bus route, direction, and five-minute observation bucket.
+    columns:
+      - name: observation_bucket
+        data_tests:
+          - not_null
+      - name: route_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_routes')
+                field: route_id
+      - name: direction_id
+        data_tests:
+          - not_null
+      - name: observed_trip_count
+        description: Number of sampled trips before arrival-delay eligibility is applied.
+      - name: eligible_trip_count
+        description: Samples with a calculable arrival-based predicted delay.
+      - name: late_trip_count
+        description: Eligible samples over the configured predicted-delay threshold.
+      - name: metric_coverage_percentage
+        description: Eligible samples divided by observed samples.
+      - name: predicted_late_percentage
+        description: Late samples divided by eligible samples; null when none are eligible.
+      - name: p90_predicted_lateness_minutes
+        description: 90th percentile of non-negative predicted arrival lateness.
+
+  - name: service_alerts_latest_snapshot
+    description: >
+      One row per alert in the newest non-empty alert snapshot stored in staging.
+      The model cannot detect an empty source snapshot until feed-run metadata is
+      persisted separately.
+    config:
+      materialized: view
+    columns:
+      - name: alert_id
+        data_tests:
+          - not_null
+          - unique
+      - name: feed_timestamp
+        data_tests:
+          - not_null
+      - name: route_ids
+        description: Distinct routes targeted by the alert's informed entities.
+      - name: stop_ids
+        description: Distinct stops targeted by the alert's informed entities.
+      - name: is_display_active_now
+        description: Whether any active period says the alert should currently be displayed.
+      - name: is_feed_fresh
+        description: Whether the latest stored non-empty snapshot is within the alert freshness threshold.
