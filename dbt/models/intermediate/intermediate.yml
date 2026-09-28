@@ -1,0 +1,78 @@
+version: 2
+
+models:
+  - name: int_gtfs_trip_stop_schedule
+    description: >
+      Current GTFS schedule enriched with trip, route, and stop attributes. One row
+      represents one scheduled stop in a trip.
+    columns:
+      - name: trip_id
+        data_tests:
+          - not_null
+      - name: stop_sequence
+        data_tests:
+          - not_null
+      - name: stop_id
+        data_tests:
+          - not_null
+
+  - name: int_vehicle_positions_enriched
+    description: >
+      Vehicle-position events enriched with current GTFS trip and route attributes.
+      Unmatched realtime events are retained.
+    columns:
+      - name: event_id
+        data_tests:
+          - not_null
+          - unique
+      - name: vehicle_id
+        data_tests:
+          - not_null
+      - name: event_timestamp
+        data_tests:
+          - not_null
+
+  - name: int_trip_stop_updates_enriched
+    description: >
+      Realtime trip-stop predictions enriched with scheduled stop, route, and stop
+      attributes. One row represents one stop update in one realtime event.
+    columns:
+      - name: event_id
+        data_tests:
+          - not_null
+      - name: stop_update_index
+        data_tests:
+          - not_null
+      - name: trip_id
+        data_tests:
+          - not_null
+
+  - name: int_service_alert_entities_enriched
+    description: >
+      Alert informed entities enriched with matching GTFS trip, route, and stop
+      attributes. One row represents one informed entity in an alert event.
+    columns:
+      - name: event_id
+        data_tests:
+          - not_null
+      - name: informed_entity_index
+        data_tests:
+          - not_null
+      - name: alert_id
+        data_tests:
+          - not_null
+
+  - name: int_service_alert_periods
+    description: >
+      Alert entities with active-period arrays expanded into rows. Alerts without a
+      defined period are retained with null period timestamps.
+    columns:
+      - name: event_id
+        data_tests:
+          - not_null
+      - name: informed_entity_index
+        data_tests:
+          - not_null
+      - name: alert_id
+        data_tests:
+          - not_null
