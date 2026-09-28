@@ -148,9 +148,9 @@ models:
         data_tests:
           - not_null
       - name: observed_trip_count
-        description: Number of sampled trips before arrival-delay eligibility is applied.
+        description: Number of sampled trips before predicted-delay eligibility is applied.
       - name: eligible_trip_count
-        description: Samples with a calculable arrival-based predicted delay.
+        description: Samples with a calculable predicted schedule delay, using arrival first and departure as fallback.
       - name: late_trip_count
         description: Eligible samples over the configured predicted-delay threshold.
       - name: metric_coverage_percentage
@@ -158,7 +158,7 @@ models:
       - name: predicted_late_percentage
         description: Late samples divided by eligible samples; null when none are eligible.
       - name: p90_predicted_lateness_minutes
-        description: 90th percentile of non-negative predicted arrival lateness.
+        description: 90th percentile of non-negative predicted schedule lateness.
 
   - name: service_alerts_latest_snapshot
     description: >

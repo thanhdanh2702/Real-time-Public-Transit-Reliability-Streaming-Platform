@@ -1,8 +1,36 @@
-WITH calendar_bounds AS (
+WITH date_bounds AS (
     SELECT
         MIN(start_date) AS first_date,
         MAX(end_date) AS last_date
     FROM {{ ref('gtfs_calendar') }}
+
+    UNION ALL
+
+    SELECT
+        MIN((event_timestamp AT TIME ZONE '{{ var('project_timezone') }}')::DATE),
+        MAX((event_timestamp AT TIME ZONE '{{ var('project_timezone') }}')::DATE)
+    FROM {{ ref('vehicle_positions') }}
+
+    UNION ALL
+
+    SELECT
+        MIN((event_timestamp AT TIME ZONE '{{ var('project_timezone') }}')::DATE),
+        MAX((event_timestamp AT TIME ZONE '{{ var('project_timezone') }}')::DATE)
+    FROM {{ ref('trip_stop_updates') }}
+
+    UNION ALL
+
+    SELECT
+        MIN((event_timestamp AT TIME ZONE '{{ var('project_timezone') }}')::DATE),
+        MAX((event_timestamp AT TIME ZONE '{{ var('project_timezone') }}')::DATE)
+    FROM {{ ref('service_alert_entities') }}
+),
+
+calendar_bounds AS (
+    SELECT
+        MIN(first_date) AS first_date,
+        MAX(last_date) AS last_date
+    FROM date_bounds
 ),
 
 dates AS (
