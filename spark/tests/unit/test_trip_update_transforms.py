@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +44,8 @@ def test_parse_trip_update_preserves_nested_event_and_kafka_metadata(
 
     assert parsed is not None
     assert parsed.trip_id == "trip-1"
+    assert parsed.start_date == "20260814"
+    assert parsed.start_time == "25:10:00"
     assert len(parsed.payload.stop_time_updates) == 2
     assert parsed.kafka_topic == "transit.trip_updates.v1"
     assert parsed.kafka_offset == 0
@@ -109,6 +111,8 @@ def test_transform_trip_update_explodes_and_flattens_stop_updates(
         (1, "stop-2", 180),
     ]
     assert rows[0].trip_id == "trip-1"
+    assert rows[0].start_date == date(2026, 8, 14)
+    assert rows[0].start_time == "25:10:00"
     assert rows[0].event_timestamp is not None
     assert rows[0].source == "mbta_gtfs_realtime"
     assert rows[0].schema_version == 1

@@ -1,9 +1,9 @@
 WITH duplicate_grains AS (
     SELECT
         'fct_trip_monitoring_samples' AS model_name,
-        observation_bucket::TEXT || ':' || trip_id AS grain_key
+        observation_bucket::TEXT || ':' || trip_instance_key AS grain_key
     FROM {{ ref('fct_trip_monitoring_samples') }}
-    GROUP BY observation_bucket, trip_id
+    GROUP BY observation_bucket, trip_instance_key
     HAVING COUNT(*) > 1
 
     UNION ALL

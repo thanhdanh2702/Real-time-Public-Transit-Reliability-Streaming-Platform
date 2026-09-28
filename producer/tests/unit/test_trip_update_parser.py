@@ -28,6 +28,8 @@ def test_parse_trip_updates_creates_one_event_with_all_stops() -> None:
     trip_update.delay = 90
     trip_update.trip.trip_id = "trip-1"
     trip_update.trip.route_id = "1"
+    trip_update.trip.start_date = "20260814"
+    trip_update.trip.start_time = "25:10:00"
     trip_update.trip.direction_id = 0
     trip_update.trip.schedule_relationship = gtfs_realtime_pb2.TripDescriptor.SCHEDULED
     trip_update.vehicle.id = "vehicle-1"
@@ -54,6 +56,8 @@ def test_parse_trip_updates_creates_one_event_with_all_stops() -> None:
     event = events[0]
     assert event["event_id"] == f"trip-update-1:{FEED_TIMESTAMP + 10}"
     assert event["trip_id"] == "trip-1"
+    assert event["start_date"] == "20260814"
+    assert event["start_time"] == "25:10:00"
     assert event["route_id"] == "1"
     assert event["vehicle_id"] == "vehicle-1"
     assert event["payload"]["trip_delay_seconds"] == 90
@@ -83,6 +87,8 @@ def test_parse_trip_updates_keeps_canceled_trip_without_stops() -> None:
 
     event = events[0]
     assert event["event_id"] == f"canceled-trip-update:{FEED_TIMESTAMP}"
+    assert event["start_date"] is None
+    assert event["start_time"] is None
     assert event["payload"]["schedule_relationship"] == "CANCELED"
     assert event["payload"]["stop_time_updates"] == []
 
