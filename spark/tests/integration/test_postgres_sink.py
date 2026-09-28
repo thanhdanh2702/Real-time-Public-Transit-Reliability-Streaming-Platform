@@ -2,6 +2,7 @@
 
 import json
 import os
+from datetime import date
 from pathlib import Path
 from uuid import uuid4
 
@@ -183,6 +184,13 @@ def test_stream_to_postgres_replay_and_checkpoint_restart(
             )
         ).fetchone()[0]
         assert isinstance(periods, list) and len(periods) == 1
+    if kind == "trip_update":
+        trip_instance = db.execute(
+            sql.SQL("SELECT start_date, start_time FROM {}.trip_stop_updates LIMIT 1").format(
+                sql.Identifier(schema)
+            )
+        ).fetchone()
+        assert trip_instance == (date(2026, 8, 14), "25:10:00")
 
 
 def test_partition_transaction_rolls_back_on_constraint_error(spark_session, tmp_path, database):

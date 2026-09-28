@@ -1,0 +1,21 @@
+version: 2
+
+sources:
+  - name: realtime
+    schema: staging
+    description: GTFS-Realtime events processed by Spark and stored in PostgreSQL.
+    tables:
+      - name: vehicle_positions
+      - name: trip_stop_updates
+      - name: service_alert_entities
+
+  - name: gtfs_static
+    schema: raw
+    description: Static GTFS reference tables loaded from the MBTA feed.
+    tables:
+      - name: gtfs_routes
+      - name: gtfs_stops
+      - name: gtfs_trips
+      - name: gtfs_stop_times
+      - name: gtfs_calendar
+      - name: gtfs_calendar_dates

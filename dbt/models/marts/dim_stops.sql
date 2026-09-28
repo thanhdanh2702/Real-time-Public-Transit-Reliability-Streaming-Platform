@@ -1,0 +1,21 @@
+SELECT
+    stop_id,
+    stop_code,
+    stop_name,
+    stop_desc,
+    platform_name,
+    zone_id,
+    stop_address,
+    stop_url,
+    level_id,
+    municipality,
+    on_street,
+    at_street,
+    vehicle_type,
+    stop_lat,
+    stop_lon,
+    location_type,
+    parent_station,
+    wheelchair_boarding,
+    platform_code
+FROM {{ ref('gtfs_stops') }}

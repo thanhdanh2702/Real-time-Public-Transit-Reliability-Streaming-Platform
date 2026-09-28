@@ -36,9 +36,16 @@ also includes the dashboard scaffold and is not needed to collect streaming data
 
 ## Load GTFS Static reference data
 
-See [GTFS Static COPY import](docs/testing/gtfs-static-import.md) for migration and
-run commands. The independent batch loader needs only PostgreSQL and copies all
-source columns from the six supported GTFS CSVs in one transaction.
+With PostgreSQL running, the GTFS/dbt Python extras installed, and `.env` plus
+`dbt/profiles.yml` configured, refresh reference data and build/test the dbt views:
+
+```bash
+./scripts/refresh-gtfs.sh
+```
+
+See [GTFS Static refresh workflow](docs/gtfs-static-refresh.md) for setup, safe
+replacement, replay, and verification. The [COPY import guide](docs/testing/gtfs-static-import.md)
+documents the lower-level loader. Kafka and Spark are not needed for this batch job.
 
 ## Run all three streaming flows
 

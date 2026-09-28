@@ -57,6 +57,8 @@ def test_trip_update_schema_parses_valid_event(
 
     assert event is not None
     assert event.trip_id == "trip-1"
+    assert event.start_date == "20260814"
+    assert event.start_time == "25:10:00"
     assert event.payload.trip_delay_seconds == 90
     assert len(event.payload.stop_time_updates) == 2
     assert event.payload.stop_time_updates[0].stop_id == "stop-1"

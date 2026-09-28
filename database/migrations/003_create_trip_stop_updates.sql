@@ -10,6 +10,8 @@ CREATE TABLE staging.trip_stop_updates (
     published_at                   TIMESTAMPTZ NOT NULL,
 
     trip_id                        TEXT        NOT NULL,
+    start_date                     DATE,
+    start_time                     TEXT,
     route_id                       TEXT,
     vehicle_id                     TEXT,
     direction_id                   INTEGER,
@@ -38,7 +40,12 @@ CREATE TABLE staging.trip_stop_updates (
     CONSTRAINT trip_stop_updates_stop_reference_check
         CHECK (stop_id IS NOT NULL OR stop_sequence IS NOT NULL),
     CONSTRAINT trip_stop_updates_stop_sequence_check
-        CHECK (stop_sequence IS NULL OR stop_sequence >= 0)
+        CHECK (stop_sequence IS NULL OR stop_sequence >= 0),
+    CONSTRAINT trip_stop_updates_start_time_check
+        CHECK (
+            start_time IS NULL
+            OR start_time ~ '^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$'
+        )
 );
 
 COMMIT;

@@ -83,6 +83,8 @@ def parse_trip_updates(
             "published_at": published_at_iso,
             "route_id": trip.route_id or None,
             "trip_id": trip.trip_id,
+            "start_date": trip.start_date or None,
+            "start_time": trip.start_time or None,
             "vehicle_id": trip_update.vehicle.id or None,
             "payload": {
                 "direction_id": (trip.direction_id if trip.HasField("direction_id") else None),

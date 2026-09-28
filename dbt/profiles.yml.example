@@ -10,6 +10,3 @@ transitpulse:
       dbname: "{{ env_var('POSTGRES_DB', 'transitpulse') }}"
       schema: mart
       threads: 4
-      connect_timeout: 10
-      keepalives_idle: 0
-      search_path: "mart,core,staging,public"

@@ -41,3 +41,47 @@ jobs:
           else
             echo "No tests implemented yet."
           fi
+
+  gtfs-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.10-alpine
+        env:
+          POSTGRES_DB: transitpulse_test
+          POSTGRES_USER: transitpulse_test
+          # Disposable CI database only; never use application credentials here.
+          POSTGRES_PASSWORD: ci-only-gtfs-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U transitpulse_test -d transitpulse_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      RUN_POSTGRES_INTEGRATION: "1"
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: transitpulse_test
+      POSTGRES_USER: transitpulse_test
+      POSTGRES_PASSWORD: ci-only-gtfs-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install GTFS test dependencies
+        run: python -m pip install ".[gtfs,dev]"
+      - name: Check GTFS scripts and tests
+        run: |
+          python -m ruff check scripts/load_gtfs_static.py scripts/refresh_gtfs_static.py tests/test_gtfs_static_loader.py tests/test_gtfs_refresh.py
+          bash -n scripts/refresh-gtfs.sh
+      - name: Test GTFS refresh with PostgreSQL
+        run: |
+          python -m pytest -o addopts='' -q \
+            tests/test_gtfs_static_loader.py tests/test_gtfs_refresh.py \
+            --cov=scripts.load_gtfs_static --cov=scripts.refresh_gtfs_static \
+            --cov-report=term-missing --cov-fail-under=80

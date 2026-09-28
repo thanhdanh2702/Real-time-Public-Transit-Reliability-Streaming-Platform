@@ -2,15 +2,21 @@
 
 import csv
 import os
+from datetime import datetime, timedelta
 from io import TextIOWrapper
 from pathlib import Path
 from uuid import uuid4
 from zipfile import ZipFile
+from zoneinfo import ZoneInfo
 
 import pytest
 
+TODAY = datetime.now(ZoneInfo("America/New_York")).date()
 FILES = {
-    "feed_info": "feed_version,feed_start_date,feed_end_date\ntest-v1,20260101,20261231\n",
+    "feed_info": (
+        "feed_version,feed_start_date,feed_end_date\n"
+        f"test-v1,{TODAY - timedelta(days=30):%Y%m%d},{TODAY + timedelta(days=30):%Y%m%d}\n"
+    ),
     "routes": "route_id,route_type,route_long_name\n001,3,Test bus\n",
     "stops": "stop_id,stop_name,stop_lat,stop_lon\n0002,Test stop,42,-71\n",
     "trips": "route_id,service_id,trip_id\n001,S,T\n",
@@ -160,7 +166,96 @@ def test_calendar_dates_only_and_expired_warning(tmp_path, database):
         feed_info="feed_version,feed_end_date\nexpired,20000101\n",
     )
     with pytest.warns(UserWarning, match="expired"):
-        assert load_gtfs(path, connection, schema=schema)["calendar"] == 0
+        assert load_gtfs(path, connection, schema=schema, allow_expired=True)["calendar"] == 0
+
+
+@pytest.mark.parametrize(
+    "metadata, message",
+    [
+        ("v1,20000101,20000102", "expired"),
+        ("v1,20990101,20991231", "not yet effective"),
+        ("v1,20261231,20260101", "start_date"),
+    ],
+)
+def test_inspect_rejects_out_of_date_feed(tmp_path, metadata, message):
+    from scripts.load_gtfs_static import inspect_feed
+
+    path = make_zip(
+        tmp_path, feed_info="feed_version,feed_start_date,feed_end_date\n" + metadata + "\n"
+    )
+    with pytest.raises(ValueError, match=message):
+        inspect_feed(path)
+
+
+@pytest.mark.integration
+def test_refresh_state_unchanged_and_same_version_new_content(tmp_path, database):
+    from scripts.load_gtfs_static import load_gtfs
+
+    connection, schema, db = database
+    path = make_zip(tmp_path)
+    load_gtfs(path, connection, schema=schema)
+    before = db.execute(f"SELECT * FROM {schema}.gtfs_feed_state").fetchone()
+    assert load_gtfs(path, connection, schema=schema, skip_unchanged=True) is None
+    assert db.execute(f"SELECT * FROM {schema}.gtfs_feed_state").fetchone() == before
+    # Feed version strings alone do not detect corrected ZIPs.
+    path = make_zip(tmp_path, routes="route_id,route_type\n001,3\nNEW,3\n")
+    assert load_gtfs(path, connection, schema=schema, skip_unchanged=True)["routes"] == 2
+    after = db.execute(f"SELECT sha256, row_counts FROM {schema}.gtfs_feed_state").fetchone()
+    assert after[0] != before[2]
+    assert after[1]["routes"] == 2
+
+
+@pytest.mark.integration
+def test_concurrent_same_feed_loads_only_once(tmp_path, database):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from scripts.load_gtfs_static import load_gtfs
+
+    connection, schema, db = database
+    path = make_zip(tmp_path)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(
+                lambda _: load_gtfs(path, connection, schema=schema, skip_unchanged=True),
+                range(2),
+            )
+        )
+    assert sum(result is None for result in results) == 1
+    assert db.execute(f"SELECT count(*) FROM {schema}.gtfs_feed_state").fetchone()[0] == 1
+
+
+@pytest.mark.integration
+def test_failed_refresh_preserves_state_and_raw_rows(tmp_path, database):
+    import psycopg
+
+    from scripts.load_gtfs_static import load_gtfs
+
+    connection, schema, db = database
+    load_gtfs(make_zip(tmp_path), connection, schema=schema)
+    state = db.execute(f"SELECT * FROM {schema}.gtfs_feed_state").fetchone()
+    path = make_zip(
+        tmp_path,
+        routes="route_id,route_type\n001,3\nNEW,3\n",
+        calendar_dates="service_id,date,exception_type\nS,20260201,7\n",
+    )
+    with pytest.raises(psycopg.errors.CheckViolation):
+        load_gtfs(path, connection, schema=schema)
+    assert db.execute(f"SELECT * FROM {schema}.gtfs_feed_state").fetchone() == state
+    assert db.execute(f"SELECT route_id FROM {schema}.gtfs_routes").fetchall() == [("001",)]
+
+
+@pytest.mark.integration
+def test_legacy_required_column_rejected_before_replacement(tmp_path, database):
+    from scripts.load_gtfs_static import load_gtfs
+
+    connection, schema, db = database
+    load_gtfs(make_zip(tmp_path), connection, schema=schema)
+    db.execute(f"ALTER TABLE {schema}.gtfs_routes ADD COLUMN feed_version text")
+    db.execute(f"UPDATE {schema}.gtfs_routes SET feed_version = 'legacy'")
+    db.execute(f"ALTER TABLE {schema}.gtfs_routes ALTER COLUMN feed_version SET NOT NULL")
+    with pytest.raises(ValueError, match="feed_version"):
+        load_gtfs(make_zip(tmp_path), connection, schema=schema)
+    assert db.execute(f"SELECT feed_version FROM {schema}.gtfs_routes").fetchall() == [("legacy",)]
 
 
 @pytest.mark.integration

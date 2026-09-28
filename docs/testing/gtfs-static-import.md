@@ -1,18 +1,17 @@
 # Nạp GTFS Static trực tiếp bằng PostgreSQL COPY
 
+Đây là hướng dẫn loader cấp thấp. Để tải feed mới, lưu archive và chạy dbt bằng
+một lệnh, dùng [quy trình refresh GTFS Static](../gtfs-static-refresh.md):
+
+```bash
+./scripts/refresh-gtfs.sh
+```
+
 ## Phạm vi và schema
 
-Loader nạp sáu CSV ở gốc ZIP MBTA: `routes.txt`, `stops.txt`, `trips.txt`,
-`stop_times.txt`, `calendar.txt`, `calendar_dates.txt`. `feed_info.txt` được đọc
-để kiểm tra metadata và cảnh báo hết hạn, không được thêm vào từng dòng dữ liệu.
-Các file MBTA khác trong ZIP chưa thuộc phạm vi loader này.
-
-Sáu bảng `raw.gtfs_*` chứa đầy đủ cột của sáu CSV trong ZIP tham chiếu
-`2026-08-03_version-D`, bao gồm các extension MBTA. Không thêm `feed_version`
-hay `loaded_at` vào bảng. Giữ ZIP gốc để tra phiên bản và lịch sử nguồn.
-ID dùng TEXT để giữ số 0 đầu; giờ dùng TEXT để giữ `25:10:00`; ngày dùng DATE.
-COPY giữ quy ước CSV PostgreSQL: ô rỗng không quote thành NULL, `""` thành
-chuỗi rỗng. Không tự sửa giá trị nguồn trước khi nạp.
+Loader đọc sáu CSV tại gốc ZIP MBTA: `routes.txt`, `stops.txt`, `trips.txt`,
+`stop_times.txt`, `calendar.txt`, `calendar_dates.txt`. `feed_info.txt` dùng kiểm
+tra phiên bản/ngày hiệu lực. Các file MBTA khác chưa thuộc phạm vi import.
 
 | Bảng | Khóa chính |
 |---|---|
@@ -23,137 +22,85 @@ chuỗi rỗng. Không tự sửa giá trị nguồn trước khi nạp.
 | raw.gtfs_calendar | service_id |
 | raw.gtfs_calendar_dates | service_id, date |
 
-## Flow
+Sáu bảng giữ cột nguồn, bao gồm extension MBTA; không thêm `feed_version` hoặc
+`loaded_at` vào từng dòng. Metadata nằm riêng trong một dòng `raw.gtfs_feed_state`.
+ID dùng TEXT để giữ số 0 đầu; giờ dùng TEXT để giữ `25:10:00`; ngày dùng DATE.
+COPY giữ quy ước CSV PostgreSQL: ô rỗng không quote thành NULL, `""` thành chuỗi rỗng.
 
-1. Kiểm tra ZIP (tối đa 1 GB giải nén), metadata và header cả sáu CSV.
-2. Mở một transaction, lấy advisory lock để serialize các loader cùng schema.
-3. Kiểm tra mọi cột CSV đều tồn tại trong bảng đích. Header trùng, thiếu cột
-   bắt buộc, cột nguồn mới chưa có trong database đều bị từ chối, không bỏ qua.
-4. Với từng bảng: DELETE dữ liệu cũ rồi COPY trực tiếp từ ZIP theo từng khối
-   65.536 ký tự. Không tạo bảng tạm, không INSERT từng dòng, không giải nén ra đĩa.
-   Danh sách cột COPY lấy theo thứ tự header, nên CSV đổi thứ tự cột vẫn đúng.
-   Cột optional không có trong CSV được để mặc định của bảng (NULL).
-5. PostgreSQL kiểm tra kiểu dữ liệu, PK, NOT NULL và CHECK trong lúc COPY.
-   Bốn bảng routes/stops/trips/stop_times không được rỗng; hai calendar có thể rỗng.
-6. Kiểm tra trip → route, stop_time → trip/stop, stop → parent_station và
-   trip → service trong calendar hoặc calendar_dates có exception_type=1.
-7. COMMIT một lần. Bất kỳ lỗi COPY hoặc validation nào cũng rollback cả sáu bảng.
+## Chuẩn bị database
 
-Chạy lại thay toàn bộ feed hiện hành, không cộng dồn. DELETE bảo toàn identity
-của bảng. Reader thông thường vẫn đọc dữ liệu cũ trước commit; để nhiều query
-cùng thấy một snapshot, dùng transaction REPEATABLE READ. Refresh sinh WAL/dead
-tuples và giữ write lock trong lúc nạp, phù hợp refresh định kỳ. Advisory lock
-phối hợp các loader này, không ngăn mọi chương trình bên ngoài ghi vào raw.
-
-## Chạy từ thư mục project
-
-```bash
-test -f .env || cp .env.example .env
-```
-
-Với lần cài đặt đầu, đặt mật khẩu local trong `.env` trước khi khởi tạo database.
+Database mới chạy migration khi PostgreSQL khởi tạo volume. Với database đã có
+schema `raw` nhưng chưa có bảng GTFS, chạy từ thư mục gốc project:
 
 ```bash
 docker compose up -d --wait postgres
-docker compose ps postgres
-```
-
-Chờ PostgreSQL healthy. `.env` cung cấp thông tin kết nối cho Compose.
-Nếu chưa có image local chứa psycopg:
-
-```bash
-docker compose build spark-master
-```
-
-GTFS chỉ có một migration: `005_create_gtfs_static_tables.sql`, định nghĩa đầy đủ
-sáu bảng theo CSV nguồn. Database mới tự chạy file này khi PostgreSQL khởi tạo.
-Nếu database đã khởi tạo nhưng chưa có các bảng GTFS, chạy:
-
-```bash
 docker compose exec -T postgres sh -c \
   'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' \
   < database/migrations/005_create_gtfs_static_tables.sql
 ```
 
-Chạy lại 005 trên schema đúng không xóa dữ liệu. Loader chỉ nạp dữ liệu, không
-tự tạo hoặc thay cấu trúc bảng. `CREATE TABLE IF NOT EXISTS` không sửa cấu trúc
-của một bảng đã tồn tại nhưng không khớp định nghĩa.
+Chạy lại 005 trên cấu trúc đúng không xóa dữ liệu và bổ sung `gtfs_feed_state`
+nếu chưa có. `CREATE TABLE IF NOT EXISTS` **không sửa bảng legacy có cấu trúc sai**;
+cần migration/chuẩn hóa có kế hoạch, không xóa schema hoặc volume để thử lại.
 
-ZIP nguồn không đi kèm khi clone repo. Tải một bản MBTA vào thư mục riêng
-(hoặc dùng ZIP đã có và thay đường dẫn trong lệnh import):
+## Import một ZIP đã có
 
-```bash
-mkdir -p data/raw/gtfs_static/downloaded
-curl --fail --location https://cdn.mbta.com/MBTA_GTFS.zip \
-  --output data/raw/gtfs_static/downloaded/MBTA_GTFS.zip
-unzip -t data/raw/gtfs_static/downloaded/MBTA_GTFS.zip
-unzip -p data/raw/gtfs_static/downloaded/MBTA_GTFS.zip feed_info.txt
-```
-
-Nạp ZIP:
+Local cần các dependency `.[gtfs,dev]`. Loader này không tự tải, không tự archive
+và không chạy dbt; nó luôn nạp lại ZIP được truyền vào. Chọn file còn hiệu lực:
 
 ```bash
-docker compose run --rm --no-deps --entrypoint python3 \
-  -v "$PWD/scripts:/opt/transitpulse/scripts:ro" \
-  -v "$PWD/data:/opt/transitpulse/data:ro" \
-  spark-master \
-  /opt/transitpulse/scripts/load_gtfs_static.py \
-  /opt/transitpulse/data/raw/gtfs_static/downloaded/MBTA_GTFS.zip
+set -a
+source .env
+set +a
+.venv/bin/python -m scripts.load_gtfs_static /duong/dan/MBTA_GTFS.zip
 ```
 
-Lệnh chỉ chạy Python trong container dùng một lần; không khởi tạo Spark, Kafka
-hay dbt. Với ZIP mới, thay đường dẫn cuối. Feed mẫu hết hạn ngày 05/09/2026:
-vẫn import được để kiểm thử, nhưng cần feed phù hợp khi join realtime hiện tại.
+`POSTGRES_HOST`/port phải trỏ đúng database từ máy đang chạy Python.
+Feed hết hạn hoặc chưa có hiệu lực bị từ chối mặc định. Chỉ khi chủ đích kiểm thử
+dữ liệu lịch sử, thêm `--allow-expired`; không dùng cờ này trong refresh hiện hành.
 
-## Kiểm tra kết quả
+## Bảo đảm khi nạp
 
-```bash
-docker compose exec postgres sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
-```
+1. Kiểm tra CRC, giới hạn ZIP giải nén 1 GB, metadata/ngày và header sáu CSV.
+2. Mở transaction, lấy advisory lock theo schema; kiểm tra cột CSV có đủ ở bảng
+   đích và bảng đích không yêu cầu cột bắt buộc không có trong CSV.
+3. DELETE rồi COPY từng bảng theo khối 65.536 ký tự; thứ tự cột lấy từ header.
+   Không giải nén file ra đĩa hoặc INSERT từng dòng. Cột optional không có trong
+   CSV được để mặc định của bảng.
+4. Kiểm tra kiểu/PK/NOT NULL/CHECK; routes, stops, trips, stop_times không được
+   rỗng; calendar và calendar_dates có thể rỗng. Kiểm tra các tham chiếu nguồn.
+5. Ghi checksum, phiên bản, ngày, đường dẫn ZIP và row counts vào state rồi COMMIT.
+   Bất kỳ lỗi nào trước commit đều rollback sáu bảng **và metadata**.
+
+Refresh thay toàn bộ snapshot hiện hành, không cộng dồn. DELETE giữ identity của
+bảng. Reader thông thường vẫn đọc dữ liệu đã commit trước đó trong khi load;
+nếu nhiều query phải thấy cùng một snapshot, dùng transaction REPEATABLE READ.
+Advisory lock không ngăn chương trình khác bỏ qua lock rồi ghi trực tiếp vào raw.
+
+## Kiểm tra và chạy tests
 
 ```sql
-\dt raw.gtfs_*
-SELECT route_id, route_desc, route_fare_class, network_id FROM raw.gtfs_routes LIMIT 5;
-SELECT trip_id, route_pattern_id FROM raw.gtfs_trips LIMIT 5;
+SELECT feed_version, feed_start_date, feed_end_date, loaded_at, row_counts
+FROM raw.gtfs_feed_state;
 SELECT count(*) FROM raw.gtfs_stop_times;
 ```
 
-Xem metadata trong ZIP thay vì query cột tự thêm:
+Tests PostgreSQL tạo/xóa schema riêng `test_gtfs_<uuid>`, không thay raw hiện hành.
+Nạp `.env` như trên rồi chạy:
 
 ```bash
-unzip -p data/raw/gtfs_static/downloaded/MBTA_GTFS.zip feed_info.txt
+RUN_POSTGRES_INTEGRATION=1 .venv/bin/python -m pytest -o addopts='' \
+  --cov=scripts.load_gtfs_static --cov=scripts.refresh_gtfs_static \
+  --cov-report=term-missing --cov-fail-under=80 -q \
+  tests/test_gtfs_static_loader.py tests/test_gtfs_refresh.py
 ```
 
-## Kiểm thử — 2026-09-21
+Để kiểm thử ZIP thật, thêm `GTFS_TEST_ZIP=/duong/dan/MBTA_GTFS.zip` trước lệnh.
+Dùng feed còn hiệu lực; test này đối chiếu header/số dòng nguồn và nạp hai lần.
+`-o addopts=''` tránh đưa coverage mặc định của Spark/producer vào bài test GTFS.
 
-Tests tạo/xóa schema riêng `test_gtfs_<uuid>`, không thay dữ liệu raw hiện hành.
-32 test GTFS pass trên PostgreSQL thật; coverage loader 96%. Test ZIP thật
-đối chiếu toàn bộ header với schema, đếm bản ghi nguồn rồi
-kiểm tra số dòng sau hai lần import (2.237.146 stop_times mỗi lần).
-
-Bao gồm reload không nhân đôi và loại bỏ dòng cũ; rollback cả sáu bảng sau lỗi
-CSV/kiểu dữ liệu/CHECK/PK/tham chiếu; BOM, header đảo thứ tự, dấu phẩy, newline
-trong quoted field, UTF-8, NULL/chuỗi rỗng; giữ các cột extension; chạy lại 005
-giữ nguyên dữ liệu và vẫn import tiếp được.
-
-```bash
-docker compose run --rm --no-deps --entrypoint python3 \
-  -e RUN_POSTGRES_INTEGRATION=1 -e COVERAGE_FILE=/tmp/gtfs.coverage \
-  -v "$PWD/scripts:/opt/transitpulse/scripts:ro" \
-  -v "$PWD/database:/opt/transitpulse/database:ro" \
-  -v "$PWD/tests:/opt/transitpulse/tests:ro" \
-  -v "$PWD/pyproject.toml:/opt/transitpulse/pyproject.toml:ro" \
-  --workdir /opt/transitpulse spark-master \
-  -m pytest -o addopts='' -p no:cacheprovider \
-  --cov=scripts.load_gtfs_static --cov-report=term-missing \
-  --cov-fail-under=80 -q tests/test_gtfs_static_loader.py
-```
-
-Để chạy thêm test ZIP thật, thêm hai option trước `--workdir`:
-
-```bash
-  -v "$PWD/data:/opt/transitpulse/data:ro" \
-  -e GTFS_TEST_ZIP=/opt/transitpulse/data/raw/gtfs_static/2026-08-03_version-D/MBTA_GTFS.zip \
-```
-
-Chưa kiểm thử lỗi mạng/process kill giữa transaction hoặc nhiều loader cạnh tranh.
+Phạm vi kiểm thử gồm rollback, replay không nhân đôi, loại bỏ dòng cũ, schema
+drift, metadata/checksum, hai loader cạnh tranh, CSV quoting/BOM/UTF-8,
+retry/timeout qua network mock và wrapper chỉ chạy dbt khi refresh thành công.
+Kết quả thực thi mới nhất được ghi trong [báo cáo refresh](../gtfs-static-refresh.md).
+Chưa có fault-injection kill process thực tế giữa một transaction đang chạy.

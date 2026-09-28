@@ -2,15 +2,18 @@
 
 import argparse
 import csv
+import hashlib
 import os
 import warnings
 from datetime import datetime
 from io import TextIOWrapper
 from pathlib import Path
 from zipfile import ZipFile
+from zoneinfo import ZoneInfo
 
 import psycopg
 from psycopg import sql
+from psycopg.types.json import Jsonb
 
 REQUIRED = {
     "routes": ("route_id", "route_type"),
@@ -115,35 +118,77 @@ def read_header(archive, name):
     return fields
 
 
-def load_gtfs(path, connection, *, schema="raw"):
-    counts = {}
+def inspect_feed(path, *, allow_expired=False):
+    """Validate a complete ZIP before any database writes; return feed metadata."""
     with ZipFile(path) as archive:
         if sum(item.file_size for item in archive.infolist()) > 1_000_000_000:
             raise ValueError("GTFS ZIP exceeds 1 GB uncompressed limit")
+        if archive.testzip() is not None:
+            raise ValueError("GTFS ZIP failed CRC validation")
         info = list(read_csv(archive, "feed_info", ("feed_version", "feed_end_date")))
         if len(info) != 1 or not info[0]["feed_version"].strip():
             raise ValueError("Expected one feed_info row with a non-empty feed_version")
-        if datetime.strptime(info[0]["feed_end_date"], "%Y%m%d").date() < datetime.now().date():
-            warnings.warn("GTFS feed has expired; use for import tests only", stacklevel=2)
+        end = datetime.strptime(info[0]["feed_end_date"], "%Y%m%d").date()
+        start_text = info[0].get("feed_start_date")
+        start = datetime.strptime(start_text, "%Y%m%d").date() if start_text else None
+        if start and start > end:
+            raise ValueError("GTFS feed_start_date is after feed_end_date")
+        today = datetime.now(ZoneInfo("America/New_York")).date()
+        problem = None
+        if end < today:
+            problem = "expired"
+        elif start and start > today:
+            problem = "not yet effective"
+        if problem:
+            if not allow_expired:
+                raise ValueError(f"GTFS feed is {problem}; keep the current feed")
+            warnings.warn(f"GTFS feed is {problem}; historical import only", stacklevel=2)
+        for name in REQUIRED:
+            read_header(archive, name)
+        return {
+            "feed_version": info[0]["feed_version"],
+            "feed_start_date": start,
+            "feed_end_date": end,
+        }
+
+
+def validate_schema(db, schema, headers):
+    for name, columns in headers.items():
+        target = db.execute(
+            "SELECT column_name, is_nullable, column_default FROM information_schema.columns "
+            "WHERE table_schema = %s AND table_name = %s",
+            (schema, f"gtfs_{name}"),
+        ).fetchall()
+        missing = set(columns) - {row[0] for row in target}
+        required = {row[0] for row in target if row[1] == "NO" and row[2] is None} - set(columns)
+        if not target or missing or required:
+            raise ValueError(
+                f"Schema mismatch for {schema}.gtfs_{name}: "
+                f"missing CSV columns={sorted(missing)}, "
+                f"required target columns={sorted(required)}. "
+                "Align tables with migration 005; CREATE IF NOT EXISTS does not alter them."
+            )
+    if db.execute("SELECT to_regclass(%s)", (f"{schema}.gtfs_feed_state",)).fetchone()[0] is None:
+        raise ValueError("Missing gtfs_feed_state; apply the updated migration 005")
+
+
+def load_gtfs(
+    path, connection, *, schema="raw", skip_unchanged=False, source_url=None, allow_expired=False
+):
+    """Replace six tables and feed state together; return None when already loaded."""
+    metadata = inspect_feed(path, allow_expired=allow_expired)
+    with Path(path).open("rb") as source:
+        checksum = hashlib.file_digest(source, "sha256").hexdigest()
+    counts = {}
+    with ZipFile(path) as archive:
         headers = {name: read_header(archive, name) for name in REQUIRED}
         with psycopg.connect(**connection) as db:
             db.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"gtfs:{schema}",))
-            # Reject schema drift rather than silently discarding source columns.
-            for name, columns in headers.items():
-                target_columns = {
-                    row[0]
-                    for row in db.execute(
-                        "SELECT column_name FROM information_schema.columns "
-                        "WHERE table_schema = %s AND table_name = %s",
-                        (schema, f"gtfs_{name}"),
-                    )
-                }
-                if not target_columns or set(columns) - target_columns:
-                    raise ValueError(
-                        f"Schema mismatch for {schema}.gtfs_{name}; use migration 005 "
-                        f"and ensure every CSV column exists: "
-                        f"{sorted(set(columns) - target_columns)}"
-                    )
+            validate_schema(db, schema, headers)
+            state = sql.Identifier(schema, "gtfs_feed_state")
+            previous = db.execute(sql.SQL("SELECT sha256 FROM {} WHERE singleton").format(state))
+            if skip_unchanged and previous.fetchone() == (checksum,):
+                return None
             for name, columns in headers.items():
                 target = sql.Identifier(schema, f"gtfs_{name}")
                 db.execute(sql.SQL("DELETE FROM {}").format(target))
@@ -162,14 +207,38 @@ def load_gtfs(path, connection, *, schema="raw"):
                 if not counts[name] and name not in ("calendar", "calendar_dates"):
                     raise ValueError(f"Empty required table: {name}")
             validate_references(db, schema)
+            db.execute(
+                sql.SQL("""
+                    INSERT INTO {} (singleton, feed_version, sha256, feed_start_date,
+                        feed_end_date, source_url, archive_path, row_counts)
+                    VALUES (TRUE, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (singleton) DO UPDATE SET
+                        feed_version = EXCLUDED.feed_version, sha256 = EXCLUDED.sha256,
+                        feed_start_date = EXCLUDED.feed_start_date,
+                        feed_end_date = EXCLUDED.feed_end_date, source_url = EXCLUDED.source_url,
+                        archive_path = EXCLUDED.archive_path, row_counts = EXCLUDED.row_counts,
+                        loaded_at = CURRENT_TIMESTAMP
+                """).format(state),
+                (
+                    metadata["feed_version"],
+                    checksum,
+                    metadata["feed_start_date"],
+                    metadata["feed_end_date"],
+                    source_url,
+                    str(Path(path).resolve()),
+                    Jsonb(counts),
+                ),
+            )
     return counts
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("zip_path", type=Path)
+    parser.add_argument("--allow-expired", action="store_true", help="Historical/test import only")
     args = parser.parse_args()
-    counts = load_gtfs(args.zip_path, connection_from_env())
+    options = {"allow_expired": True} if args.allow_expired else {}
+    counts = load_gtfs(args.zip_path, connection_from_env(), **options)
     for name, count in counts.items():
         print(f"raw.gtfs_{name}: {count:,} rows")
     print("Committed all six GTFS tables.")

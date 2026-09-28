@@ -1,0 +1,28 @@
+version: 2
+
+unit_tests:
+  - name: dim_dates_covers_static_and_realtime_history
+    description: The date spine spans both the current GTFS feed and retained realtime history.
+    model: dim_dates
+    given:
+      - input: ref('gtfs_calendar')
+        format: sql
+        rows: |
+          SELECT DATE '2026-09-02' AS start_date, DATE '2026-09-02' AS end_date
+      - input: ref('vehicle_positions')
+        format: sql
+        rows: |
+          SELECT TIMESTAMPTZ '2026-09-01 12:00:00+00' AS event_timestamp
+      - input: ref('trip_stop_updates')
+        format: sql
+        rows: |
+          SELECT TIMESTAMPTZ '2026-09-03 12:00:00+00' AS event_timestamp
+      - input: ref('service_alert_entities')
+        format: sql
+        rows: |
+          SELECT TIMESTAMPTZ '2026-09-02 12:00:00+00' AS event_timestamp
+    expect:
+      rows:
+        - {date_day: '2026-09-01'}
+        - {date_day: '2026-09-02'}
+        - {date_day: '2026-09-03'}

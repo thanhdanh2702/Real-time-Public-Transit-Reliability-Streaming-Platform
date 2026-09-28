@@ -191,4 +191,17 @@ CREATE TABLE IF NOT EXISTS raw.gtfs_calendar_dates (
     PRIMARY KEY (service_id, date)
 );
 
+-- One committed current-feed record; source rows remain faithful to the CSV files.
+CREATE TABLE IF NOT EXISTS raw.gtfs_feed_state (
+    singleton           BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+    feed_version        TEXT NOT NULL,
+    sha256              TEXT NOT NULL CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+    feed_start_date     DATE,
+    feed_end_date       DATE NOT NULL,
+    source_url          TEXT,
+    archive_path        TEXT NOT NULL,
+    row_counts          JSONB NOT NULL,
+    loaded_at           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 COMMIT;
