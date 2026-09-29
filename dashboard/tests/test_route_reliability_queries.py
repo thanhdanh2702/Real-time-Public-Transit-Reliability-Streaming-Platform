@@ -103,3 +103,6 @@ def test_trip_details_respect_filters_and_bus_scope(mart_database):
     assert details.iloc[0]["stop_name"] == "Main St"
     assert details.iloc[0]["delay_basis"] == "arrival"
     assert details.iloc[0]["predicted_delay_seconds"] == 360
+
+    with pytest.raises(ValueError, match="limit"):
+        route_reliability.get_trip_samples(since, limit=0)
