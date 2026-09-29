@@ -115,6 +115,7 @@ def get_trip_samples(
             trip_id,
             trip_instance_key,
             stop_name,
+            delay_basis,
             scheduled_prediction_timestamp,
             delay_prediction_timestamp,
             predicted_delay_seconds,
