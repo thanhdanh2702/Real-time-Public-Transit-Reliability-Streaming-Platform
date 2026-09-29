@@ -27,7 +27,7 @@ def mart_database(monkeypatch):
             "(observation_bucket TEXT, observation_local_timestamp TEXT, "
             "event_timestamp TEXT, route_id TEXT, route_short_name TEXT, "
             "direction_id INTEGER, route_type INTEGER, trip_id TEXT, "
-            "trip_instance_key TEXT, stop_name TEXT, "
+            "trip_instance_key TEXT, stop_name TEXT, delay_basis TEXT, "
             "scheduled_prediction_timestamp TEXT, delay_prediction_timestamp TEXT, "
             "predicted_delay_seconds INTEGER, is_predicted_late BOOLEAN)"
         )
@@ -46,13 +46,13 @@ def mart_database(monkeypatch):
             "INSERT INTO mart.fct_trip_monitoring_samples VALUES "
             "('2026-09-29 12:00:00', '2026-09-29 08:00:00', "
             "'2026-09-29 12:01:00', 'A', 'A', 0, 3, 'trip-1', 'trip-1|20260929', "
-            "'Main St', '2026-09-29 12:05:00', '2026-09-29 12:11:00', 360, 1), "
+            "'Main St', 'arrival', '2026-09-29 12:05:00', '2026-09-29 12:11:00', 360, 1), "
             "('2026-09-29 12:00:00', '2026-09-29 08:00:00', "
             "'2026-09-29 12:02:00', 'A', 'A', 1, 3, 'trip-2', 'trip-2|20260929', "
-            "'Park St', '2026-09-29 12:05:00', '2026-09-29 12:05:00', 0, 0), "
+            "'Park St', 'departure', '2026-09-29 12:05:00', '2026-09-29 12:05:00', 0, 0), "
             "('2026-09-29 12:00:00', '2026-09-29 08:00:00', "
             "'2026-09-29 12:03:00', 'Red', 'Red', 0, 1, 'trip-3', 'trip-3|20260929', "
-            "'South St', '2026-09-29 12:05:00', '2026-09-29 12:05:00', 0, 0)"
+            "'South St', 'arrival', '2026-09-29 12:05:00', '2026-09-29 12:05:00', 0, 0)"
         )
     yield engine
     engine.dispose()
@@ -101,4 +101,5 @@ def test_trip_details_respect_filters_and_bus_scope(mart_database):
 
     assert details["trip_id"].tolist() == ["trip-1"]
     assert details.iloc[0]["stop_name"] == "Main St"
+    assert details.iloc[0]["delay_basis"] == "arrival"
     assert details.iloc[0]["predicted_delay_seconds"] == 360
