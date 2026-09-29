@@ -19,6 +19,7 @@ def test_reliability_rate_uses_total_late_and_eligible_counts():
         "eligible": 100,
         "late": 1,
         "late_percentage": 1.0,
+        "coverage_percentage": 100.0,
     }
 
 
@@ -28,4 +29,5 @@ def test_reliability_rate_is_unknown_without_eligible_samples():
     )
 
     assert summarize_reliability(trend)["late_percentage"] is None
+    assert summarize_reliability(trend)["coverage_percentage"] == 0.0
     assert summarize_reliability(trend.iloc[0:0])["observed"] is None
