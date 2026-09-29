@@ -71,7 +71,8 @@ def test_route_page_shows_metrics_comparison_and_trip_detail(monkeypatch):
             [
                 {
                     "observation_local_timestamp": "2026-09-29 08:00:00",
-                    "route_short_name": "A",
+                    "route_id": "A",
+                    "route_short_name": None,
                     "direction_id": 0,
                     "trip_id": "trip-1",
                     "stop_name": "Main St",
@@ -91,6 +92,7 @@ def test_route_page_shows_metrics_comparison_and_trip_detail(monkeypatch):
     assert [metric.value for metric in page.metric] == ["100", "100", "1.0%", "100.0%"]
     assert len(page.get("plotly_chart")) == 2
     assert page.get("dataframe")
+    assert page.get("dataframe")[0].value.iloc[0]["Route"] == "A"
     next(widget for widget in page.selectbox if widget.label == "Inspect bucket").set_value(
         bucket
     ).run()
