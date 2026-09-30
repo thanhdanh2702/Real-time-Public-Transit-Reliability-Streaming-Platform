@@ -2,8 +2,8 @@
 
 TransitPulse is a portfolio-grade public-transit streaming platform built around Apache Kafka and Spark Structured Streaming. It ingests MBTA GTFS Realtime feeds, computes operational metrics and alerts, stores serving data in PostgreSQL, and presents results through Streamlit.
 
-The Kafka producer and three Spark-to-PostgreSQL flows are implemented. Analytical models,
-dashboard features, and orchestration remain subsequent project stages.
+The Kafka producer, three Spark-to-PostgreSQL flows, dbt marts, and three Streamlit
+dashboard views are implemented. Orchestration remains a subsequent project stage.
 
 ## Data sources
 
@@ -32,7 +32,22 @@ MBTA/MassDOT remains the provider of the source data. Review and follow the curr
 6. Run `make smoke` to verify the infrastructure.
 
 The `streaming` profile starts the producer and all three Spark jobs. The `apps` profile
-also includes the dashboard scaffold and is not needed to collect streaming data.
+includes the dashboard and is not needed to collect streaming data.
+
+## Dashboard
+
+Start PostgreSQL and the Streamlit app with `docker compose up -d --build dashboard`,
+then open `http://localhost:8501`. The app has Overview, Route Reliability, and Live
+Operations pages. Live Operations maps only bus positions marked fresh by the dbt
+view (currently 90 seconds), and shows service alerts only while their stored feed
+snapshot is fresh (currently 10 minutes). It displays the last observed timestamps
+so an empty selection is not mistaken for a stopped feed.
+
+The alert mart represents the latest stored **non-empty** snapshot; newer empty
+source snapshots are not persisted yet. The page labels this limitation instead of
+claiming that a displayed zero is a confirmed absence of source alerts. Live
+Operations reads dbt views, while the Route Reliability table marts need a new
+`dbt build` after incoming Spark data to reflect recent trip updates.
 
 ## Load GTFS Static reference data
 

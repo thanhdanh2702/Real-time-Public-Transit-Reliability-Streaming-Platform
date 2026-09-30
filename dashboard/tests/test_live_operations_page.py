@@ -89,7 +89,7 @@ def test_live_page_shows_map_vehicle_detail_and_alert(monkeypatch):
 
     assert not page.exception
     assert [metric.value for metric in page.metric] == ["1", "1"]
-    assert page.get("pydeck_chart")
+    assert page.get("deck_gl_json_chart")
     assert any("trip-a" in text.value for text in page.markdown)
     assert any("Bus detour" in text.value for text in page.markdown)
     next(widget for widget in page.selectbox if widget.label == "Route").set_value("A").run()
@@ -106,9 +106,74 @@ def test_live_page_does_not_show_old_positions_or_stale_alert_count(monkeypatch)
 
     assert not page.exception
     assert [metric.value for metric in page.metric] == ["0", "—"]
-    assert not page.get("pydeck_chart")
+    assert not page.get("deck_gl_json_chart")
     assert len(page.warning) >= 2
     assert any("No fresh bus positions" in info.value for info in page.info)
+
+
+def test_live_page_distinguishes_fresh_empty_selection_from_stale_feed(monkeypatch):
+    _mock_live_data(monkeypatch)
+    monkeypatch.setattr(live_operations, "get_live_vehicles", lambda **_kwargs: pd.DataFrame())
+    monkeypatch.setattr(live_operations, "get_active_alerts", lambda **_kwargs: pd.DataFrame())
+
+    page = AppTest.from_file(LIVE_PAGE).run()
+
+    assert not page.exception
+    assert [metric.value for metric in page.metric] == ["0", "0"]
+    assert any("latest stored non-empty snapshot" in info.value for info in page.info)
+
+
+def test_live_page_handles_missing_names_without_inventing_alert_route(monkeypatch):
+    _mock_live_data(monkeypatch)
+    monkeypatch.setattr(
+        route_reliability,
+        "get_routes",
+        lambda: pd.DataFrame(
+            [{"route_id": "A", "route_short_name": None, "route_long_name": None}]
+        ),
+    )
+    monkeypatch.setattr(
+        live_operations,
+        "get_live_vehicles",
+        lambda **_kwargs: pd.DataFrame(
+            [
+                {
+                    "vehicle_id": "bus-a",
+                    "route_id": "A",
+                    "route_short_name": None,
+                    "trip_id": None,
+                    "trip_headsign": None,
+                    "direction_id": None,
+                    "latitude": 42.35,
+                    "longitude": -71.06,
+                    "occupancy_status": None,
+                    "event_timestamp": pd.Timestamp.now(tz="UTC"),
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        live_operations,
+        "get_active_alerts",
+        lambda **_kwargs: pd.DataFrame(
+            [
+                {
+                    "alert_id": "alert-a",
+                    "severity": None,
+                    "effect": None,
+                    "header_text": None,
+                    "description_text": None,
+                    "route_ids": [],
+                }
+            ]
+        ),
+    )
+
+    page = AppTest.from_file(LIVE_PAGE).run()
+
+    assert not page.exception
+    assert page.get("dataframe")[0].value.iloc[0]["Routes"] == "Route not specified"
+    assert any("Trip: —" in text.value for text in page.markdown)
 
 
 def test_live_page_reports_database_failure_without_exposing_credentials(monkeypatch):
@@ -116,6 +181,21 @@ def test_live_page_reports_database_failure_without_exposing_credentials(monkeyp
         raise RuntimeError("POSTGRES_PASSWORD=secret")
 
     monkeypatch.setattr(route_reliability, "get_routes", unavailable)
+
+    page = AppTest.from_file(LIVE_PAGE).run()
+
+    assert not page.exception
+    assert any("PostgreSQL" in error.value for error in page.error)
+    assert all("secret" not in error.value for error in page.error)
+
+
+def test_live_page_catches_database_errors_wrapped_by_pandas(monkeypatch):
+    _mock_live_data(monkeypatch)
+
+    def unavailable(**_kwargs):
+        raise pd.errors.DatabaseError("POSTGRES_PASSWORD=secret")
+
+    monkeypatch.setattr(live_operations, "get_live_vehicles", unavailable)
 
     page = AppTest.from_file(LIVE_PAGE).run()
 

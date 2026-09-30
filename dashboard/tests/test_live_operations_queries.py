@@ -86,6 +86,23 @@ def test_alert_query_keeps_unknown_route_scope_and_uses_bound_values(monkeypatch
     assert parameters == {"route_id": "A' OR 1=1 --", "limit": 21}
 
 
+def test_all_routes_omits_untyped_null_parameter(monkeypatch):
+    calls = []
+
+    def read(query, parameters=None):
+        calls.append((query, parameters))
+        return pd.DataFrame()
+
+    monkeypatch.setattr(live_operations, "read_dataframe", read)
+
+    live_operations.get_live_vehicles(limit=10)
+    live_operations.get_active_alerts(limit=20)
+
+    assert all(":route_id" not in query for query, _ in calls)
+    assert calls[0][1] == {"limit": 11}
+    assert calls[1][1] == {"limit": 21}
+
+
 def test_alert_status_uses_latest_stored_snapshot(live_database):
     with live_database.begin() as connection:
         connection.exec_driver_sql(
