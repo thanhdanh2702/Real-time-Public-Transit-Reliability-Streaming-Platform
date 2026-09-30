@@ -6,6 +6,12 @@ WHERE
     OR (
         delay_basis IS NOT NULL
         AND (
+            delay_prediction_timestamp IS NULL
+            OR predicted_delay_seconds IS DISTINCT FROM
+                EXTRACT(
+                    EPOCH FROM (delay_prediction_timestamp - scheduled_prediction_timestamp)
+                )::INTEGER
+            OR
             predicted_delay_seconds IS NULL
             OR predicted_lateness_seconds IS NULL
             OR predicted_lateness_seconds < 0

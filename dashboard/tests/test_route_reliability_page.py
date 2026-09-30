@@ -200,3 +200,61 @@ def test_route_page_reports_unavailable_database(monkeypatch):
 
     assert not page.exception
     assert any("PostgreSQL" in error.value for error in page.error)
+
+
+def test_route_page_hides_pandas_database_error_in_filters(monkeypatch):
+    def unavailable():
+        raise pd.errors.DatabaseError("POSTGRES_PASSWORD=secret")
+
+    monkeypatch.setattr(route_reliability, "get_routes", unavailable)
+
+    page = AppTest.from_file(ROUTE_PAGE).run()
+
+    assert not page.exception
+    assert [error.value for error in page.error] == [
+        "Could not load route data from PostgreSQL. Check the database and dbt marts."
+    ]
+
+
+def test_route_page_hides_pandas_database_error_in_trip_detail(monkeypatch):
+    bucket = pd.Timestamp.now(tz="UTC").floor("5min")
+    monkeypatch.setattr(route_reliability, "get_routes", lambda: pd.DataFrame(columns=["route_id"]))
+    monkeypatch.setattr(
+        route_reliability,
+        "get_latest_bucket",
+        lambda route_id=None, direction_id=None: pd.DataFrame([{"latest_bucket": bucket}]),
+    )
+    monkeypatch.setattr(
+        route_reliability,
+        "get_trend",
+        lambda since, route_id=None, direction_id=None: pd.DataFrame(
+            [
+                {
+                    "observation_bucket": bucket,
+                    "observed_trip_count": 1,
+                    "eligible_trip_count": 1,
+                    "late_trip_count": 0,
+                    "predicted_late_percentage": 0.0,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        route_reliability,
+        "get_route_comparison",
+        lambda since, route_id=None, direction_id=None: pd.DataFrame(
+            columns=["predicted_late_percentage"]
+        ),
+    )
+
+    def unavailable(*_args, **_kwargs):
+        raise pd.errors.DatabaseError("POSTGRES_PASSWORD=secret")
+
+    monkeypatch.setattr(route_reliability, "get_trip_samples", unavailable)
+
+    page = AppTest.from_file(ROUTE_PAGE).run()
+
+    assert not page.exception
+    assert [error.value for error in page.error] == [
+        "Could not load trip samples from PostgreSQL."
+    ]
