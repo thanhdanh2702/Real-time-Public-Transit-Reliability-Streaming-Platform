@@ -255,6 +255,4 @@ def test_route_page_hides_pandas_database_error_in_trip_detail(monkeypatch):
     page = AppTest.from_file(ROUTE_PAGE).run()
 
     assert not page.exception
-    assert [error.value for error in page.error] == [
-        "Could not load trip samples from PostgreSQL."
-    ]
+    assert [error.value for error in page.error] == ["Could not load trip samples from PostgreSQL."]

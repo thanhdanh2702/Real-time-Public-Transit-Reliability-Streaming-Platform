@@ -122,6 +122,8 @@ models:
           - accepted_values:
               arguments:
                 values: [arrival, departure]
+      - name: delay_prediction_timestamp
+        description: Arrival or departure prediction actually compared with the GTFS schedule.
       - name: predicted_delay_seconds
         description: Prediction timestamp minus the nearest matching scheduled timestamp.
       - name: predicted_lateness_seconds

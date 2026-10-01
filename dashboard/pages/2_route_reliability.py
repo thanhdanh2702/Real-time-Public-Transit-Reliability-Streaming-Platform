@@ -60,7 +60,7 @@ def show_route_reliability() -> None:
             if route_id is None and not trend.empty
             else pd.DataFrame()
         )
-    except (SQLAlchemyError, RuntimeError):
+    except (SQLAlchemyError, pd.errors.DatabaseError, RuntimeError):
         st.error("Could not load route data from PostgreSQL. Check the database and dbt marts.")
         return
 
@@ -114,7 +114,7 @@ def show_route_reliability() -> None:
         details = route_reliability.get_trip_samples(
             since, route_id, direction_id, bucket=selected_bucket, limit=100
         )
-    except (SQLAlchemyError, RuntimeError):
+    except (SQLAlchemyError, pd.errors.DatabaseError, RuntimeError):
         st.error("Could not load trip samples from PostgreSQL.")
         return
     if details.empty:
