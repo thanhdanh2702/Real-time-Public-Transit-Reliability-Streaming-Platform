@@ -1,0 +1,6 @@
+dbt-core==1.12.5
+dbt-postgres==1.11.0
+opentelemetry-exporter-prometheus==0.66b0
+protobuf>=6,<6.32
+psycopg[binary]>=3.2,<4
+urllib3>=2.8,<3
