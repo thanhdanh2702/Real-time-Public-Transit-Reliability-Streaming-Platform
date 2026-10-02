@@ -19,6 +19,8 @@ def transform_trip_update(df: DataFrame) -> DataFrame:
         F.col("ingested_at"),
         F.col("published_at"),
         F.col("trip_id"),
+        F.to_date(F.col("start_date"), "yyyyMMdd").alias("start_date"),
+        F.col("start_time"),
         F.col("route_id"),
         F.col("vehicle_id"),
         F.col("payload.direction_id").alias("direction_id"),

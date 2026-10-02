@@ -2,7 +2,8 @@
 
 TransitPulse is a portfolio-grade public-transit streaming platform built around Apache Kafka and Spark Structured Streaming. It ingests MBTA GTFS Realtime feeds, computes operational metrics and alerts, stores serving data in PostgreSQL, and presents results through Streamlit.
 
-This repository is currently a configured scaffold. Business-logic files are intentionally empty so implementation can follow the project blueprint step by step.
+The Kafka producer, three Spark-to-PostgreSQL flows, dbt marts, and three Streamlit
+dashboard views are implemented. Orchestration remains a subsequent project stage.
 
 ## Data sources
 
@@ -30,7 +31,50 @@ MBTA/MassDOT remains the provider of the source data. Review and follow the curr
 5. Run `make tools-up` if Kafka UI is needed.
 6. Run `make smoke` to verify the infrastructure.
 
-The `apps` profile is intentionally not started by default because producer, Spark jobs, and dashboard application files are empty in this scaffold.
+The `streaming` profile starts the producer and all three Spark jobs. The `apps` profile
+includes the dashboard and is not needed to collect streaming data.
+
+## Dashboard
+
+Start PostgreSQL and the Streamlit app with `docker compose up -d --build dashboard`,
+then open `http://localhost:8501`. The app has Overview, Route Reliability, and Live
+Operations pages. Live Operations maps only bus positions marked fresh by the dbt
+view (currently 90 seconds), and shows service alerts only while their stored feed
+snapshot is fresh (currently 10 minutes). It displays the last observed timestamps
+so an empty selection is not mistaken for a stopped feed.
+
+The alert mart represents the latest stored **non-empty** snapshot; newer empty
+source snapshots are not persisted yet. The page labels this limitation instead of
+claiming that a displayed zero is a confirmed absence of source alerts. Live
+Operations reads dbt views, while the Route Reliability table marts need a new
+`dbt build` after incoming Spark data to reflect recent trip updates.
+
+## Load GTFS Static reference data
+
+With PostgreSQL running, the GTFS/dbt Python extras installed, and `.env` plus
+`dbt/profiles.yml` configured, refresh reference data and build/test the dbt views:
+
+```bash
+./scripts/refresh-gtfs.sh
+```
+
+See [GTFS Static refresh workflow](docs/gtfs-static-refresh.md) for setup, safe
+replacement, replay, and verification. The [COPY import guide](docs/testing/gtfs-static-import.md)
+documents the lower-level loader. Kafka and Spark are not needed for this batch job.
+
+## Run all three streaming flows
+
+Set `SPARK_WORKER_CORES=3` and `SPARK_WORKER_MEMORY=4g` in `.env`, then run:
+
+```bash
+docker compose build spark-master spark-worker
+docker compose --profile streaming up -d
+docker compose logs -f --tail 50 spark-job-vehicle spark-job-trip spark-job-alert
+```
+
+Each job has its own driver container and checkpoint, and requests at most one executor core.
+See [parallel Spark jobs](docs/testing/parallel-spark-jobs.md) for resource sizing,
+restart commands, and verification results.
 
 ## Service endpoints
 

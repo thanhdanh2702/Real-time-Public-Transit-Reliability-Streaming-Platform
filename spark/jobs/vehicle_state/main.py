@@ -1,6 +1,7 @@
 import os
 
 from spark.common.config import postgres_connection_from_env
+from spark.common.metrics.streaming_listener import PostgresStreamingMetricsListener
 from spark.common.session import create_spark_session
 from spark.common.sinks.postgres_sink import start_postgres_sink
 from spark.common.sources.kafka_source import read_kafka_stream
@@ -37,8 +38,15 @@ def main() -> None:
 
     postgres_connection = postgres_connection_from_env()
     spark = create_spark_session(APP_NAME)
+    metrics_listener = PostgresStreamingMetricsListener(
+        application_name=APP_NAME,
+        connection=postgres_connection,
+    )
+    metrics_registered = False
 
     try:
+        spark.streams.addListener(metrics_listener)
+        metrics_registered = True
         raw_df = read_kafka_stream(
             spark=spark,
             bootstrap_servers=bootstrap_servers,
@@ -69,6 +77,8 @@ def main() -> None:
 
         query.awaitTermination()
     finally:
+        if metrics_registered:
+            spark.streams.removeListener(metrics_listener)
         spark.stop()
 
 
