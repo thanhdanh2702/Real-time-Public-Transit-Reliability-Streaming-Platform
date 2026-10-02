@@ -26,6 +26,7 @@ producer = [
   "requests>=2.32,<3",
   "structlog>=24,<26",
   "tenacity>=9,<10",
+  "urllib3>=2.8,<3",
 ]
 spark = [
   "psycopg[binary]>=3.2,<4",
@@ -33,6 +34,7 @@ spark = [
   "PyYAML>=6,<7",
 ]
 dashboard = [
+  "confluent-kafka>=2.6,<3",
   "pandas>=2.2,<4",
   "plotly>=6,<7",
   "psycopg[binary]>=3.2,<4",
@@ -40,6 +42,7 @@ dashboard = [
   "PyYAML>=6,<7",
   "SQLAlchemy>=2,<3",
   "streamlit>=1.40,<2",
+  "urllib3>=2.8,<3",
 ]
 dbt = [
   "dbt-core>=1.10,<2",
@@ -54,6 +57,8 @@ dev = [
   "ruff>=0.9,<1",
   "types-PyYAML>=6,<7",
   "types-requests>=2.32,<3",
+  "urllib3>=2.8,<3",
+  "virtualenv>=21.7.13,<22",
 ]
 
 [tool.setuptools.packages.find]

@@ -149,6 +149,7 @@ SELECT
     scheduled_arrival_time,
     scheduled_departure_time,
     scheduled_prediction_timestamp,
+    delay_prediction_timestamp,
     delay_basis,
     delay_seconds AS raw_feed_delay_seconds,
     predicted_delay_seconds,

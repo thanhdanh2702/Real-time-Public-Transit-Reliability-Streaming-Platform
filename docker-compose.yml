@@ -82,6 +82,7 @@ services:
       - ./database/migrations/004_create_service_alert_entities.sql:/docker-entrypoint-initdb.d/40-create-service-alert-entities.sql:ro
       - ./database/migrations/005_create_gtfs_static_tables.sql:/docker-entrypoint-initdb.d/50-create-gtfs-static-tables.sql:ro
       - ./database/migrations/006_add_trip_instance_fields.sql:/docker-entrypoint-initdb.d/60-add-trip-instance-fields.sql:ro
+      - ./database/migrations/007_create_pipeline_metrics.sql:/docker-entrypoint-initdb.d/70-create-pipeline-metrics.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -327,20 +328,7 @@ services:
     entrypoint: /bin/bash
     command:
       - -c
-      - >-
-        airflow db migrate &&
-        (airflow users create
-        --username "$${AIRFLOW_ADMIN_USERNAME}"
-        --password "$${AIRFLOW_ADMIN_PASSWORD}"
-        --firstname Transit
-        --lastname Pulse
-        --role Admin
-        --email "$${AIRFLOW_ADMIN_EMAIL}" || true)
-    environment:
-      <<: *airflow-common-env
-      AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin}
-      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-change-me-local-airflow}
-      AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@example.invalid}
+      - airflow db migrate
     depends_on:
       postgres:
         condition: service_healthy
@@ -383,7 +371,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       POSTGRES_DB: ${POSTGRES_DB:-transitpulse}
       POSTGRES_USER: ${POSTGRES_USER:-transitpulse_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       ROUTES_CONFIG_PATH: /app/configs/routes.example.yaml
       THRESHOLDS_CONFIG_PATH: /app/configs/thresholds.yaml
@@ -407,8 +395,9 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-transitpulse}
       POSTGRES_USER: ${POSTGRES_USER:-transitpulse_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_HOST: postgres
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       APP_TIMEZONE: ${APP_TIMEZONE:-America/New_York}
     ports:
       - "${DASHBOARD_PORT:-8501}:8501"
