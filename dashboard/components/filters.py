@@ -2,7 +2,9 @@ import pandas as pd
 import streamlit as st
 
 
-def route_reliability_filters(routes: pd.DataFrame) -> tuple[int, str | None, int | None]:
+def route_reliability_filters(
+    routes: pd.DataFrame,
+) -> tuple[int, str | None, int | None, int, str]:
     st.sidebar.header("Filters")
     windows = {"60 minutes": 60, "6 hours": 360, "24 hours": 1440}
     window = st.sidebar.selectbox("Time window", list(windows))
@@ -27,4 +29,16 @@ def route_reliability_filters(routes: pd.DataFrame) -> tuple[int, str | None, in
     direction_id = st.sidebar.selectbox(
         "Direction", list(directions), format_func=lambda value: directions[value]
     )
-    return windows[window], route_id, direction_id
+    min_samples = st.sidebar.slider(
+        "Minimum eligible samples",
+        min_value=1,
+        max_value=200,
+        value=20,
+        help="Routes below this threshold are excluded from route comparison.",
+    )
+    sort_label = st.sidebar.selectbox(
+        "Sort samples",
+        ["Latest observation", "Largest predicted delay"],
+    )
+    sort_by = "latest" if sort_label == "Latest observation" else "largest_delay"
+    return windows[window], route_id, direction_id, min_samples, sort_by

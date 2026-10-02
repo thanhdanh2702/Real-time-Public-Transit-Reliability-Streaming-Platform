@@ -7,6 +7,7 @@ from dashboard.queries.database import read_dataframe
 
 def _where(
     since: datetime | None = None,
+    until: datetime | None = None,
     route_id: str | None = None,
     direction_id: int | None = None,
     bucket: object | None = None,
@@ -16,6 +17,9 @@ def _where(
     if since is not None:
         conditions.append("observation_bucket >= :cutoff")
         parameters["cutoff"] = since
+    if until is not None:
+        conditions.append("observation_bucket < :end_time")
+        parameters["end_time"] = until
     if route_id is not None:
         conditions.append("route_id = :route_id")
         parameters["route_id"] = route_id
@@ -40,9 +44,13 @@ def get_routes() -> pd.DataFrame:
 
 
 def get_trend(
-    since: datetime, route_id: str | None = None, direction_id: int | None = None
+    since: datetime,
+    route_id: str | None = None,
+    direction_id: int | None = None,
+    *,
+    until: datetime | None = None,
 ) -> pd.DataFrame:
-    where, parameters = _where(since, route_id, direction_id)
+    where, parameters = _where(since, until, route_id, direction_id)
     return read_dataframe(
         f"""
         SELECT
@@ -63,9 +71,17 @@ def get_trend(
 
 
 def get_route_comparison(
-    since: datetime, route_id: str | None = None, direction_id: int | None = None
+    since: datetime,
+    route_id: str | None = None,
+    direction_id: int | None = None,
+    *,
+    until: datetime | None = None,
+    min_eligible_samples: int = 0,
 ) -> pd.DataFrame:
-    where, parameters = _where(since, route_id, direction_id)
+    if min_eligible_samples < 0:
+        raise ValueError("min_eligible_samples must be non-negative")
+    where, parameters = _where(since, until, route_id, direction_id)
+    parameters["min_eligible_samples"] = min_eligible_samples
     return read_dataframe(
         f"""
         SELECT
@@ -80,6 +96,60 @@ def get_route_comparison(
         FROM mart.route_health_5m
         WHERE {where}
         GROUP BY route_id
+        HAVING SUM(eligible_trip_count) >= :min_eligible_samples
+        """,
+        parameters,
+    )
+
+
+def get_period_summary(
+    start_time: datetime,
+    end_time: datetime,
+    route_id: str | None = None,
+    direction_id: int | None = None,
+) -> pd.DataFrame:
+    conditions = [
+        "route_type = 3",
+        "event_timestamp >= :start_time",
+        "event_timestamp < :end_time",
+    ]
+    parameters: dict[str, object] = {"start_time": start_time, "end_time": end_time}
+    if route_id is not None:
+        conditions.append("route_id = :route_id")
+        parameters["route_id"] = route_id
+    if direction_id is not None:
+        conditions.append("direction_id = :direction_id")
+        parameters["direction_id"] = direction_id
+
+    return read_dataframe(
+        f"""
+        SELECT
+            COUNT(*) AS observed_trip_count,
+            COUNT(*) FILTER (WHERE predicted_delay_seconds IS NOT NULL)
+                AS eligible_trip_count,
+            COUNT(*) FILTER (WHERE is_predicted_late IS TRUE) AS late_trip_count,
+            CASE WHEN COUNT(*) FILTER (WHERE predicted_delay_seconds IS NOT NULL) > 0
+                THEN ROUND(
+                    100.0 * COUNT(*) FILTER (WHERE is_predicted_late IS TRUE)
+                    / COUNT(*) FILTER (WHERE predicted_delay_seconds IS NOT NULL),
+                    1
+                )
+            END AS predicted_late_percentage,
+            CASE WHEN COUNT(*) > 0
+                THEN ROUND(
+                    100.0 * COUNT(*) FILTER (WHERE predicted_delay_seconds IS NOT NULL)
+                    / COUNT(*),
+                    1
+                )
+            END AS metric_coverage_percentage,
+            ROUND(
+                PERCENTILE_CONT(0.9) WITHIN GROUP (
+                    ORDER BY GREATEST(predicted_delay_seconds, 0) / 60.0
+                ) FILTER (WHERE predicted_delay_seconds IS NOT NULL)::NUMERIC,
+                1
+            ) AS p90_predicted_lateness_minutes
+        FROM mart.fct_trip_monitoring_samples
+        WHERE {" AND ".join(conditions)}
         """,
         parameters,
     )
@@ -99,10 +169,19 @@ def get_trip_samples(
     direction_id: int | None = None,
     bucket: object | None = None,
     limit: int = 100,
+    sort_by: str = "latest",
 ) -> pd.DataFrame:
     if not 1 <= limit <= 500:
         raise ValueError("limit must be between 1 and 500")
-    where, parameters = _where(since, route_id, direction_id, bucket)
+    order_by = {
+        "latest": "observation_bucket DESC, event_timestamp DESC, trip_instance_key",
+        "largest_delay": (
+            "predicted_delay_seconds DESC, observation_bucket DESC, event_timestamp DESC"
+        ),
+    }
+    if sort_by not in order_by:
+        raise ValueError("sort_by must be 'latest' or 'largest_delay'")
+    where, parameters = _where(since, None, route_id, direction_id, bucket)
     parameters["limit"] = limit
     return read_dataframe(
         f"""
@@ -122,7 +201,7 @@ def get_trip_samples(
             is_predicted_late
         FROM mart.fct_trip_monitoring_samples
         WHERE route_type = 3 AND {where}
-        ORDER BY observation_bucket DESC, event_timestamp DESC, trip_instance_key
+        ORDER BY {order_by[sort_by]}
         LIMIT :limit
         """,
         parameters,

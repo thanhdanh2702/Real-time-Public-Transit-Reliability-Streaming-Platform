@@ -14,6 +14,7 @@ RUN addgroup --system transitpulse && adduser --system --ingroup transitpulse tr
 
 COPY pyproject.toml README.md ./
 COPY dashboard ./dashboard
+COPY .streamlit ./.streamlit
 
 RUN python -m pip install --upgrade pip && python -m pip install ".[dashboard]"
 

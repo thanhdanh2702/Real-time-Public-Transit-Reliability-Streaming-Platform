@@ -3,7 +3,13 @@ import json
 import pandas as pd
 import pytest
 
-from dashboard.components.vehicle_map import build_vehicle_map
+from dashboard.components.vehicle_map import build_vehicle_map, occupancy_label
+
+
+def test_occupancy_status_is_presented_as_readable_text():
+    assert occupancy_label("MANY_SEATS_AVAILABLE") == "Many seats available"
+    assert occupancy_label(None) == "Unknown"
+    assert occupancy_label("NEW_STATUS") == "New status"
 
 
 def test_vehicle_map_uses_actual_coordinates_and_selected_vehicle():

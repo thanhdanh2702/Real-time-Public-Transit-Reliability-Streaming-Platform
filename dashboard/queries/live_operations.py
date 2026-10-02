@@ -21,25 +21,33 @@ def get_vehicle_feed_status() -> pd.DataFrame:
     )
 
 
-def get_live_vehicles(route_id: str | None = None, limit: int = 2000) -> pd.DataFrame:
+def get_live_vehicles(
+    route_id: str | None = None,
+    direction_id: int | None = None,
+    limit: int = 2000,
+) -> pd.DataFrame:
     """Return one extra vehicle so the page can detect a truncated map."""
     _check_limit(limit)
     route_clause = "AND route_id = :route_id" if route_id is not None else ""
+    direction_clause = "AND direction_id = :direction_id" if direction_id is not None else ""
     parameters: dict[str, object] = {"limit": limit + 1}
     if route_id is not None:
         parameters["route_id"] = route_id
+    if direction_id is not None:
+        parameters["direction_id"] = direction_id
     return read_dataframe(
         f"""
         SELECT
             vehicle_id, event_timestamp, route_id, route_short_name,
             trip_id, trip_headsign, direction_id, latitude, longitude,
-            occupancy_status
+            occupancy_status, source_age_seconds
         FROM mart.vehicle_latest_state
         WHERE route_type = 3
             AND is_fresh
             AND latitude BETWEEN -90 AND 90
             AND longitude BETWEEN -180 AND 180
             {route_clause}
+            {direction_clause}
         ORDER BY event_timestamp DESC, vehicle_id
         LIMIT :limit
         """,
@@ -73,8 +81,9 @@ def get_active_alerts(route_id: str | None = None, limit: int = 100) -> pd.DataF
     return read_dataframe(
         f"""
         SELECT
-            alert_id, feed_timestamp, severity, effect, header_text,
-            description_text, route_ids, stop_ids, trip_ids, direction_ids
+            alert_id, feed_timestamp, cause, severity, effect, header_text,
+            description_text, url, route_ids, stop_ids, trip_ids, direction_ids,
+            source_age_seconds
         FROM mart.service_alerts_latest_snapshot
         WHERE is_display_active_now
             AND is_feed_fresh

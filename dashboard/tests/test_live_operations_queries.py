@@ -15,7 +15,8 @@ def live_database(monkeypatch):
             "CREATE TABLE mart.vehicle_latest_state ("
             "vehicle_id TEXT, event_timestamp TEXT, route_id TEXT, route_type INTEGER, "
             "route_short_name TEXT, trip_id TEXT, trip_headsign TEXT, direction_id INTEGER, "
-            "latitude REAL, longitude REAL, occupancy_status TEXT, is_fresh BOOLEAN)"
+            "latitude REAL, longitude REAL, occupancy_status TEXT, source_age_seconds INTEGER, "
+            "is_fresh BOOLEAN)"
         )
         connection.exec_driver_sql(
             "CREATE TABLE mart.service_alerts_latest_snapshot ("
@@ -30,22 +31,23 @@ def test_live_vehicles_use_fresh_bus_positions_and_bound_route_filter(live_datab
         connection.exec_driver_sql(
             "INSERT INTO mart.vehicle_latest_state VALUES "
             "('bus-a', '2026-09-30 12:00:00', 'A', 3, 'A', 'trip-a', 'Center', 0, "
-            "42.35, -71.06, 'MANY_SEATS_AVAILABLE', 1), "
+            "42.35, -71.06, 'MANY_SEATS_AVAILABLE', 30, 1), "
             "('old-bus', '2026-09-30 11:00:00', 'A', 3, 'A', NULL, NULL, NULL, "
-            "42.34, -71.05, NULL, 0), "
+            "42.34, -71.05, NULL, 3600, 0), "
             "('train', '2026-09-30 12:01:00', 'A', 1, 'A', NULL, NULL, NULL, "
-            "42.33, -71.04, NULL, 1), "
+            "42.33, -71.04, NULL, 20, 1), "
             "('no-location', '2026-09-30 12:02:00', 'A', 3, 'A', NULL, NULL, NULL, "
-            "NULL, -71.03, NULL, 1), "
-            "('bus-b', '2026-09-30 12:03:00', 'B', 3, 'B', NULL, NULL, NULL, "
-            "42.36, -71.07, NULL, 1)"
+            "NULL, -71.03, NULL, 10, 1), "
+            "('bus-b', '2026-09-30 12:03:00', 'B', 3, 'B', NULL, NULL, 1, "
+            "42.36, -71.07, NULL, 5, 1)"
         )
 
-    vehicles = live_operations.get_live_vehicles(route_id="A", limit=10)
+    vehicles = live_operations.get_live_vehicles(route_id="A", direction_id=0, limit=10)
     malicious = live_operations.get_live_vehicles(route_id="A' OR 1=1 --", limit=10)
     status = live_operations.get_vehicle_feed_status().iloc[0]
 
     assert vehicles["vehicle_id"].tolist() == ["bus-a"]
+    assert vehicles.iloc[0]["source_age_seconds"] == 30
     assert malicious.empty
     assert status["fresh_vehicle_count"] == 3
     assert status["latest_event_at"] == "2026-09-30 12:03:00"
@@ -56,9 +58,9 @@ def test_live_vehicles_fetch_one_extra_row_to_detect_truncation(live_database):
         connection.exec_driver_sql(
             "INSERT INTO mart.vehicle_latest_state VALUES "
             "('a', '2026-09-30 12:00:00', 'A', 3, 'A', NULL, NULL, NULL, "
-            "42.35, -71.06, NULL, 1), "
+            "42.35, -71.06, NULL, 30, 1), "
             "('b', '2026-09-30 12:01:00', 'A', 3, 'A', NULL, NULL, NULL, "
-            "42.36, -71.07, NULL, 1)"
+            "42.36, -71.07, NULL, 20, 1)"
         )
 
     vehicles = live_operations.get_live_vehicles(limit=1)

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+import pandas as pd
 import pytest
 from sqlalchemy import create_engine
 
@@ -73,6 +74,44 @@ def test_route_queries_use_bus_mart_and_weighted_rates(mart_database):
     assert comparison.loc["B", "eligible_trip_count"] == 0
 
 
+def test_route_comparison_applies_minimum_eligible_sample_threshold(mart_database):
+    since = datetime(2026, 9, 29, 11, 0, tzinfo=UTC)
+
+    comparison = route_reliability.get_route_comparison(
+        since,
+        min_eligible_samples=10,
+    )
+
+    assert comparison["route_id"].tolist() == ["A"]
+
+
+def test_period_summary_uses_sample_grain_for_p90_and_equal_window(monkeypatch):
+    calls = []
+
+    def read(query, parameters=None):
+        calls.append((query, parameters))
+        return pd.DataFrame()
+
+    monkeypatch.setattr(route_reliability, "read_dataframe", read)
+    start = datetime(2026, 9, 29, 11, 0, tzinfo=UTC)
+    end = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
+
+    route_reliability.get_period_summary(start, end, route_id="A", direction_id=0)
+
+    query, parameters = calls[0]
+    assert "mart.fct_trip_monitoring_samples" in query
+    assert "PERCENTILE_CONT(0.9)" in query
+    assert "route_type = 3" in query
+    assert "event_timestamp >= :start_time" in query
+    assert "event_timestamp < :end_time" in query
+    assert parameters == {
+        "start_time": start,
+        "end_time": end,
+        "route_id": "A",
+        "direction_id": 0,
+    }
+
+
 def test_route_filters_apply_to_trend_comparison_and_latest_bucket(mart_database):
     since = datetime(2026, 9, 29, 11, 0, tzinfo=UTC)
 
@@ -106,3 +145,21 @@ def test_trip_details_respect_filters_and_bus_scope(mart_database):
 
     with pytest.raises(ValueError, match="limit"):
         route_reliability.get_trip_samples(since, limit=0)
+
+
+def test_trip_details_support_safe_largest_delay_sort(monkeypatch):
+    calls = []
+
+    def read(query, parameters=None):
+        calls.append((query, parameters))
+        return pd.DataFrame()
+
+    monkeypatch.setattr(route_reliability, "read_dataframe", read)
+    since = datetime(2026, 9, 29, 11, 0, tzinfo=UTC)
+
+    route_reliability.get_trip_samples(since, sort_by="largest_delay")
+
+    query, _ = calls[0]
+    assert "predicted_delay_seconds DESC" in query
+    with pytest.raises(ValueError, match="sort_by"):
+        route_reliability.get_trip_samples(since, sort_by="unsafe SQL")

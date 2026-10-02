@@ -69,7 +69,8 @@ def overview_database(monkeypatch):
     with engine.begin() as connection:
         connection.exec_driver_sql("ATTACH DATABASE ':memory:' AS mart")
         connection.exec_driver_sql(
-            "CREATE TABLE mart.vehicle_latest_state (event_timestamp TEXT, is_fresh BOOLEAN)"
+            "CREATE TABLE mart.vehicle_latest_state "
+            "(event_timestamp TEXT, is_fresh BOOLEAN, route_type INTEGER)"
         )
         connection.exec_driver_sql(
             "CREATE TABLE mart.service_alerts_latest_snapshot "
@@ -88,7 +89,9 @@ def test_overview_counts_only_fresh_vehicles_and_alerts(overview_database):
     with overview_database.begin() as connection:
         connection.exec_driver_sql(
             "INSERT INTO mart.vehicle_latest_state VALUES "
-            "('2026-09-29 12:00:00', 1), ('2026-09-29 11:00:00', 0)"
+            "('2026-09-29 12:00:00', 1, 3), "
+            "('2026-09-29 11:00:00', 0, 3), "
+            "('2026-09-29 12:05:00', 1, 1)"
         )
         connection.exec_driver_sql(
             "INSERT INTO mart.service_alerts_latest_snapshot VALUES "

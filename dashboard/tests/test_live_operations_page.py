@@ -88,7 +88,7 @@ def test_live_page_shows_map_vehicle_detail_and_alert(monkeypatch):
     page = AppTest.from_file(LIVE_PAGE).run()
 
     assert not page.exception
-    assert [metric.value for metric in page.metric] == ["1", "1"]
+    assert [metric.value for metric in page.metric[:2]] == ["1", "1"]
     assert page.get("deck_gl_json_chart")
     assert any("trip-a" in text.value for text in page.markdown)
     assert any("Bus detour" in text.value for text in page.markdown)
@@ -146,7 +146,7 @@ def test_live_page_handles_missing_names_without_inventing_alert_route(monkeypat
                     "direction_id": None,
                     "latitude": 42.35,
                     "longitude": -71.06,
-                    "occupancy_status": None,
+                    "occupancy_status": "MANY_SEATS_AVAILABLE",
                     "event_timestamp": pd.Timestamp.now(tz="UTC"),
                 }
             ]
@@ -202,3 +202,56 @@ def test_live_page_catches_database_errors_wrapped_by_pandas(monkeypatch):
     assert not page.exception
     assert any("PostgreSQL" in error.value for error in page.error)
     assert all("secret" not in error.value for error in page.error)
+
+
+def test_live_page_filters_direction_and_keeps_vehicle_selection(monkeypatch):
+    _mock_live_data(monkeypatch)
+    calls = []
+
+    def vehicles(route_id=None, direction_id=None, limit=2000):
+        calls.append((route_id, direction_id))
+        return pd.DataFrame(
+            [
+                {
+                    "vehicle_id": "bus-a",
+                    "route_id": "A",
+                    "route_short_name": "A",
+                    "trip_id": "trip-a",
+                    "trip_headsign": "Center",
+                    "direction_id": 0,
+                    "latitude": 42.35,
+                    "longitude": -71.06,
+                    "occupancy_status": "MANY_SEATS_AVAILABLE",
+                    "source_age_seconds": 10,
+                    "event_timestamp": pd.Timestamp.now(tz="UTC"),
+                },
+                {
+                    "vehicle_id": "bus-b",
+                    "route_id": "A",
+                    "route_short_name": "A",
+                    "trip_id": "trip-b",
+                    "trip_headsign": "Harbor",
+                    "direction_id": 1,
+                    "latitude": 42.36,
+                    "longitude": -71.07,
+                    "occupancy_status": "MANY_SEATS_AVAILABLE",
+                    "source_age_seconds": 20,
+                    "event_timestamp": pd.Timestamp.now(tz="UTC"),
+                },
+            ]
+        )
+
+    monkeypatch.setattr(live_operations, "get_live_vehicles", vehicles)
+    monkeypatch.setattr(live_operations, "get_active_alerts", lambda **_kwargs: pd.DataFrame())
+
+    page = AppTest.from_file(LIVE_PAGE).run()
+    direction_filter = next(
+        widget for widget in page.sidebar.selectbox if widget.label == "Direction"
+    )
+    direction_filter.set_value(0).run()
+    next(widget for widget in page.selectbox if widget.label == "Vehicle").set_value("bus-b").run()
+
+    assert not page.exception
+    assert calls[-1][1] == 0
+    assert page.session_state["selected_vehicle_id"] == "bus-b"
+    assert any("Many seats available" in text.value for text in page.markdown)
