@@ -1,15 +1,31 @@
 name: ${COMPOSE_PROJECT_NAME:-transitpulse}
 
 x-airflow-common: &airflow-common
-  image: ${AIRFLOW_IMAGE:-apache/airflow:3.1.4-python3.12}
+  build:
+    context: .
+    dockerfile: airflow/Dockerfile
+    args:
+      AIRFLOW_IMAGE: ${AIRFLOW_IMAGE:-apache/airflow:3.1.4-python3.12}
+      AIRFLOW_VERSION: "3.1.4"
+  image: transitpulse-airflow:local
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-transitpulse_admin}:${POSTGRES_PASSWORD:-change-me-local-postgres}@postgres:5432/airflow
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: ${AIRFLOW_DAGS_PAUSED_AT_CREATION:-false}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-transitpulse_admin}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/airflow
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
-    AIRFLOW__WEBSERVER__SECRET_KEY: local-development-only-change-me
-    PYTHONPATH: /opt/airflow
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
+    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_API_SECRET_KEY:?AIRFLOW_API_SECRET_KEY is required}
+    AIRFLOW__API__BASE_URL: http://airflow-api-server:8080
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_API_AUTH_JWT_SECRET:?AIRFLOW_API_AUTH_JWT_SECRET is required}
+    PYTHONPATH: /opt/airflow:/opt/airflow/include
+    POSTGRES_HOST: postgres
+    POSTGRES_HOST_PORT: "5432"
+    POSTGRES_DB: ${POSTGRES_DB:-transitpulse}
+    POSTGRES_USER: ${POSTGRES_USER:-transitpulse_admin}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    DBT_REFRESH_SCHEDULE: ${DBT_REFRESH_SCHEDULE:-*/5 * * * *}
+    DBT_COMMAND_TIMEOUT_SECONDS: ${DBT_COMMAND_TIMEOUT_SECONDS:-480}
   user: "${AIRFLOW_UID:-50000}:0"
   volumes:
     - ./airflow/dags:/opt/airflow/dags
@@ -82,6 +98,7 @@ services:
       - ./database/migrations/004_create_service_alert_entities.sql:/docker-entrypoint-initdb.d/40-create-service-alert-entities.sql:ro
       - ./database/migrations/005_create_gtfs_static_tables.sql:/docker-entrypoint-initdb.d/50-create-gtfs-static-tables.sql:ro
       - ./database/migrations/006_add_trip_instance_fields.sql:/docker-entrypoint-initdb.d/60-add-trip-instance-fields.sql:ro
+      - ./database/migrations/007_create_pipeline_metrics.sql:/docker-entrypoint-initdb.d/70-create-pipeline-metrics.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -327,20 +344,7 @@ services:
     entrypoint: /bin/bash
     command:
       - -c
-      - >-
-        airflow db migrate &&
-        (airflow users create
-        --username "$${AIRFLOW_ADMIN_USERNAME}"
-        --password "$${AIRFLOW_ADMIN_PASSWORD}"
-        --firstname Transit
-        --lastname Pulse
-        --role Admin
-        --email "$${AIRFLOW_ADMIN_EMAIL}" || true)
-    environment:
-      <<: *airflow-common-env
-      AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin}
-      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-change-me-local-airflow}
-      AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@example.invalid}
+      - airflow db migrate
     depends_on:
       postgres:
         condition: service_healthy
@@ -366,6 +370,15 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  airflow-dag-processor:
+    <<: *airflow-common
+    profiles: ["orchestration"]
+    command: dag-processor
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   producer:
     build:
       context: .
@@ -383,7 +396,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       POSTGRES_DB: ${POSTGRES_DB:-transitpulse}
       POSTGRES_USER: ${POSTGRES_USER:-transitpulse_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       ROUTES_CONFIG_PATH: /app/configs/routes.example.yaml
       THRESHOLDS_CONFIG_PATH: /app/configs/thresholds.yaml
@@ -407,8 +420,9 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-transitpulse}
       POSTGRES_USER: ${POSTGRES_USER:-transitpulse_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_HOST: postgres
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       APP_TIMEZONE: ${APP_TIMEZONE:-America/New_York}
     ports:
       - "${DASHBOARD_PORT:-8501}:8501"
